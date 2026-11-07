@@ -56,6 +56,20 @@ def apply_shape(obj, rows):
             moved.add(i)
     if not moved:
         print('shape edits matched no vertices on', obj.name); return
+    # Fade the baked crease shading (vertex colours) to neutral where vertices moved, as the Forge does.
+    fade = {}
+    for x, y, z, dx, dy, dz in rows:
+        f = min(1.0, (dx * dx + dy * dy + dz * dz) ** 0.5 / 0.004)
+        for _, i, _ in tree.find_range(Vector((x, -z, y)), 2e-4): fade[i] = f
+    for attr in me.color_attributes:
+        if attr.domain == 'POINT':
+            for i, f in fade.items():
+                c = attr.data[i].color; attr.data[i].color = [c[k] + (1 - c[k]) * f for k in range(3)] + [c[3]]
+        elif attr.domain == 'CORNER':
+            for li, loop in enumerate(me.loops):
+                f = fade.get(loop.vertex_index)
+                if f:
+                    c = attr.data[li].color; attr.data[li].color = [c[k] + (1 - c[k]) * f for k in range(3)] + [c[3]]
     me.update()
     # Smooth normals over the moved area, shared by vertices that sit at the same place (UV seams).
     key = lambda co: (round(co.x, 4), round(co.y, 4), round(co.z, 4))

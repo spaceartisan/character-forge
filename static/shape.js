@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 
 const Q = 1e4; // weld/match positions to 0.1 mm
+const SHADE_FADE = 0.004; // baked shading fades out over the first 4 mm a vertex moves
 const keyOf = (x, y, z) => Math.round(x * Q) + ',' + Math.round(y * Q) + ',' + Math.round(z * Q);
 
 // ---------------------------------------------------------------------------------------------
@@ -56,6 +57,21 @@ export class PartShape {
     this.applied = '[]';
   }
 
+  // The welded vertex at a stored position. Rows are rounded to 0.01 mm, so a position can fall just
+  // across a 0.1 mm weld bucket from its vertex: look in the neighbouring buckets too, nearest wins.
+  find(x, y, z) {
+    const w = this.key.get(keyOf(x, y, z));
+    if (w !== undefined) return w;
+    const bx = Math.round(x * Q), by = Math.round(y * Q), bz = Math.round(z * Q);
+    let best = -1, bd = 5e-5 ** 2; // within 0.05 mm
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+      const u = this.key.get((bx + i) + ',' + (by + j) + ',' + (bz + k));
+      if (u === undefined) continue;
+      const dx = this.orig[u * 3] - x, dy = this.orig[u * 3 + 1] - y, dz = this.orig[u * 3 + 2] - z, d = dx * dx + dy * dy + dz * dz;
+      if (d < bd) { bd = d; best = u; }
+    }
+    return best;
+  }
   // Welded id of a mesh triangle's corners.
   triangle(mesh, face) {
     const mi = this.meshes.indexOf(mesh), map = this.vidToW[mi];
@@ -74,6 +90,21 @@ export class PartShape {
       p.setXYZ(m[k + 1], x, y, z);
     }
   }
+  // Which way the part's triangles wind relative to its own normals (+1 or -1), voted over the whole
+  // part: per vertex the original normal can't be trusted once a crease (nostril, tear duct) is opened.
+  winding() {
+    if (this._winding) return this._winding;
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), N = new THREE.Vector3();
+    let vote = 0;
+    for (let t = 0; t < this.tris.length / 3; t++) {
+      const [a, b, c] = [this.tris[t * 3], this.tris[t * 3 + 1], this.tris[t * 3 + 2]];
+      A.fromArray(this.orig, a * 3); B.fromArray(this.orig, b * 3); C.fromArray(this.orig, c * 3);
+      N.subVectors(C, B).cross(A.clone().sub(B));
+      const m = this.members[a], g = this.meshes[m[0]].geometry, o = g.userData.origNormal;
+      if (o) vote += Math.sign(N.x * o[m[1] * 3] + N.y * o[m[1] * 3 + 1] + N.z * o[m[1] * 3 + 2]);
+    }
+    return (this._winding = vote < 0 ? -1 : 1);
+  }
   // Recompute smooth normals round the given vertices (and their neighbours); the rest keep the model's own.
   refresh(changed) {
     const ring = new Set(changed);
@@ -91,21 +122,33 @@ export class PartShape {
         const g = this.meshes[m[k]].geometry, nrm = g.attributes.normal, i = m[k + 1];
         if (!nrm) continue;
         if (moved && acc.lengthSq() > 1e-20) {
-          const n = acc.clone().normalize();
-          const o = g.userData.origNormal; // keep the original facing (winding may be either way)
-          if (n.x * o[i * 3] + n.y * o[i * 3 + 1] + n.z * o[i * 3 + 2] < 0) n.negate();
+          const n = acc.clone().normalize().multiplyScalar(this.winding());
           nrm.setXYZ(i, n.x, n.y, n.z);
         } else nrm.setXYZ(i, g.userData.origNormal[i * 3], g.userData.origNormal[i * 3 + 1], g.userData.origNormal[i * 3 + 2]);
+      }
+      // The model's baked crease shading (vertex colours) belongs to its original shape: fade it to
+      // neutral where a vertex has moved, fully by SHADE_FADE, so old eye sockets don't show through.
+      const f = Math.min(1, this.moveOf(w) / SHADE_FADE);
+      for (let k = 0; k < m.length; k += 2) {
+        const g = this.meshes[m[k]].geometry, col = g.attributes.color, i = m[k + 1];
+        if (!col) continue;
+        if (!g.userData.origColor) { g.userData.origColor = new Float32Array(col.count * 3); for (let q = 0; q < col.count; q++) { g.userData.origColor[q * 3] = col.getX(q); g.userData.origColor[q * 3 + 1] = col.getY(q); g.userData.origColor[q * 3 + 2] = col.getZ(q); } }
+        const o = g.userData.origColor;
+        col.setXYZ(i, o[i * 3] + (1 - o[i * 3]) * f, o[i * 3 + 1] + (1 - o[i * 3 + 1]) * f, o[i * 3 + 2] + (1 - o[i * 3 + 2]) * f);
       }
     }
     for (const m of this.meshes) {
       const g = m.geometry;
+      if (g.attributes.color) g.attributes.color.needsUpdate = true;
       g.attributes.position.needsUpdate = true;
       if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
       g.computeBoundingSphere(); g.computeBoundingBox();
       if (m.isSkinnedMesh) { m.boundingSphere = null; m.boundingBox = null; }
       g.userData.shapeVersion = (g.userData.shapeVersion || 0) + 1;
     }
+  }
+  moveOf(w) {
+    return Math.hypot(this.cur[w * 3] - this.orig[w * 3], this.cur[w * 3 + 1] - this.orig[w * 3 + 1], this.cur[w * 3 + 2] - this.orig[w * 3 + 2]);
   }
   isMoved(w) {
     return Math.abs(this.cur[w * 3] - this.orig[w * 3]) + Math.abs(this.cur[w * 3 + 1] - this.orig[w * 3 + 1]) + Math.abs(this.cur[w * 3 + 2] - this.orig[w * 3 + 2]) > 1e-7;
@@ -125,8 +168,8 @@ export class PartShape {
     const changed = [];
     for (let w = 0; w < this.count; w++) if (this.isMoved(w)) { changed.push(w); this.set(w, this.orig[w * 3], this.orig[w * 3 + 1], this.orig[w * 3 + 2]); }
     for (const [x, y, z, dx, dy, dz] of rows || []) {
-      const w = this.key.get(keyOf(x, y, z));
-      if (w === undefined) continue;
+      const w = this.find(x, y, z);
+      if (w < 0) continue;
       this.set(w, this.orig[w * 3] + dx, this.orig[w * 3 + 1] + dy, this.orig[w * 3 + 2] + dz); changed.push(w);
     }
     this.refresh(changed);

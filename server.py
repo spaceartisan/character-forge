@@ -146,7 +146,7 @@ def upgrade_face_textures():
         try:
             shutil.copy2(path,backup)
             c=custom.get(fid)
-            if c and (REF_DIR/f"{c['source_id']}.png").is_file():
+            if c and c.get('source_id') and (REF_DIR/f"{c['source_id']}.png").is_file():
                 back=tuple(int(c['backdrop'][i:i+2],16) for i in (1,3,5))
                 face_pipeline.build(fid,c['source_id'],tuple(c['box']),[tuple(p) for p in c['points']],back,c['tolerance'])
             else:
@@ -183,7 +183,7 @@ def catalog():
         if f:
             if fid in custom:
                 f['name']=custom[fid]['name']
-                f['reference']='/references/'+custom[fid]['source_id']+'.png'
+                if custom[fid].get('source_id'): f['reference']='/references/'+custom[fid]['source_id']+'.png'  # plain faces have none
             faces.append(f)
     return {
         'faces':faces,
@@ -284,7 +284,7 @@ def face_sources(fid):
     if fid in face_pipeline.REFS:
         return bool(face_pipeline.PROFILES.get(fid)), lambda m: face_pipeline.build_ref(fid, m)
     c=read_json(CUSTOM_FILE,{}).get(fid)
-    if c and (REF_DIR/f"{c['source_id']}.png").is_file():
+    if c and c.get('source_id') and (REF_DIR/f"{c['source_id']}.png").is_file():
         back=tuple(int(c['backdrop'][i:i+2],16) for i in (1,3,5))
         return False, lambda m: face_pipeline.build(fid,c['source_id'],tuple(c['box']),[tuple(p) for p in c['points']],back,c['tolerance'],mapping=m)
     return None

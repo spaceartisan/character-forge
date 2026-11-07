@@ -204,3 +204,16 @@ A new garment must use these names, or `character.gd` must learn the new one. If
 The Forge's **Edit shape** mode stores mesh edits with the character as `shape`: `{part: [[x, y, z, dx, dy, dz], ...]}`, where `x, y, z` is a vertex's original position in the part's glTF mesh space (Y up, metres) and `dx, dy, dz` how far it moved. Matching by position rather than vertex index keeps the split copies of a vertex (UV and material seams) together. `export_character.py` (`apply_shape`) moves every Blender vertex within 0.2 mm of each `x, -z, y` and recomputes smooth normals round the moved area; the rest of the mesh keeps its own normals. Edits stay valid as long as `human.glb` is not rebuilt with different geometry.
 
 Saved base shapes (`data/shapes.json`) are the same rows under a name. A character that uses one gets a copy in its own `shape`, plus `shape_base` naming where it came from, so exports never depend on the library.
+
+## Heads from Blender
+
+A different head can be modelled in Blender and fitted onto the kit head as a base shape, so the rig, skin weights, UVs and animations all keep working (only vertices move):
+
+```
+blender -b -P blender/make_mannequin_head.py            # heads/mannequin_reference.png -> heads/mannequin_head.blend
+blender -b -P blender/conform_head.py -- heads/mannequin_head.blend "Mannequin head"
+```
+
+- `make_mannequin_head.py` lofts the front and side silhouettes of `heads/mannequin_reference.png` into a head and neck (crown 1.789 m, chin 1.545 m, like the kit head), remeshes and smooths them into one surface named `MannequinHead`. Sculpt that object freely; any closed head surface in the same place works (`conform_head.py <file.blend> "<name>" [object]`).
+- `conform_head.py` pulls the head and neck of `person_m` and `person_f` onto that surface (above z 1.53, blended down to the kit neck at 1.47), smooths the movement so the mesh keeps its spacing, spreads features the new head lacks (nose, ears) evenly inside their patches, and collapses the few spots where the kit mesh doubles back (behind the ears, inside the nostrils) to a point. It prints how many triangles still face inward (should be 0) and upserts the shape into `data/shapes.json` (`--preview out.blend` also saves the fitted bodies).
+- The old face's crease shading (vertex colours) fades to neutral where vertices moved, in the Forge and in exports. Use a plain face (`data/custom_faces.json`, `"plain": true`, e.g. `face_mannequin.png`) for a featureless head.
