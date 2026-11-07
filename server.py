@@ -24,7 +24,6 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from PIL import Image
-import numpy as np
 
 ROOT = Path(__file__).resolve().parent
 KIT = ROOT / 'character_kit'
@@ -48,7 +47,7 @@ app.mount('/references', StaticFiles(directory=REF_DIR), name='references')
 
 PRESET_FILE = DATA/'characters.json'
 SHAPES_FILE = DATA/'shapes.json'   # saved base shapes: geometry edits any character can start from
-PRINTS_FILE = DATA/'prints.json'   # imported prints for the wrap-unwrapped garments (textures/print_<id>.png)
+WRAPS_FILE = DATA/'wraps.json'     # imported outfit wraps (textures/wrap_<id>.png)
 CUSTOM_FILE = DATA/'custom_faces.json'
 SOURCES_FILE = DATA/'sources.json'
 
@@ -63,11 +62,9 @@ FACE_NAMES = {
 # Dressing rules shared by the viewer and the Blender export (copied from the game's character.gd).
 RULES = json.loads((DATA/'kit.json').read_text(encoding='utf-8'))
 FABRICS = tuple(RULES['fabrics'])
-OUTFITS = ('suit','trench','shirt','dress','tshirt','tank')
-BOTTOMS = ('trousers','shorts','jeans')   # worn with any outfit but the trench and the dress (their own legs)
-BUILTIN_PRINTS = [{'id':'cotton','name':'Plain cotton','builtin':True},{'id':'twill','name':'Twill','builtin':True}]
-PRINT_SIZE = 2048
-PRINT_MODES = ('both','front','wrap','pattern')
+OUTFITS = ('suit','trench','shirt','dress','wrap')   # 'wrap': the plain body dressed by one picture
+BUILTIN_WRAPS = [{'id':'tee_shorts','name':'T-shirt & shorts','builtin':True},{'id':'tank_jeans','name':'Tank top & jeans','builtin':True}]
+WRAP_SIZE = (4096,2048)
 HAIRS = ('none','short','long')
 
 # Colours are tints multiplied over the kit's cloth/skin/rubber textures, exactly as in the game.
@@ -76,13 +73,12 @@ DEFAULTS = {
     'name':'The Pale Agent', 'face':'agent', 'body':'m', 'outfit':'suit',
     'hair':'none', 'hat':True, 'glasses':True, 'animation':'idle','scale':1,
     'fabric':{'top':'suitcloth','pants':'suitcloth'},
-    'bottoms':'trousers', 'prints':{'tee':'cotton','bottom':'twill'},
+    'wrap':'tee_shorts',
     'colors':{
         'skin':'#c2c9c1', 'hair':'#332419', 'top':'#212125',
         'shirt':'#dbd9cc', 'tie':'#080809', 'pants':'#333338',
         'shoes':'#4c4c4c', 'skirt':'#664c4c','hat':'#212125',
-        'band':'#0d0d0e','glasses':'#080809',
-        'tee':'#e6e3dc', 'bottom':'#5f76a0'
+        'band':'#0d0d0e','glasses':'#080809'
     }
 }
 SEEDS = [
@@ -99,12 +95,10 @@ SEEDS = [
         'colors':{**DEFAULTS['colors'],'skin':'#ab6942','hair':'#120f0d','top':'#80704a','pants':'#4c422e','shoes':'#664733','hat':'#b2996b'}},
     {**DEFAULTS,'name':'Townswoman','face':'f1','body':'f','outfit':'dress','hair':'long','hat':False,'glasses':False,'fabric':{'top':'cloth','pants':'cloth'},
         'colors':{**DEFAULTS['colors'],'skin':'#d68566','hair':'#61381f','top':'#6b4c75','skirt':'#335780','shoes':'#664733'}},
-    {**DEFAULTS,'name':'Day Off','face':'m2','outfit':'tshirt','bottoms':'shorts','hair':'short','hat':False,'glasses':False,
-        'prints':{'tee':'cotton','bottom':'cotton'},
-        'colors':{**DEFAULTS['colors'],'skin':'#d69173','hair':'#2b1d14','tee':'#b84a3a','bottom':'#c9b88f','shoes':'#e3e1da'}},
-    {**DEFAULTS,'name':'Roadie','face':'f3','body':'f','outfit':'tank','bottoms':'jeans','hair':'long','hat':False,'glasses':True,
-        'prints':{'tee':'cotton','bottom':'twill'},
-        'colors':{**DEFAULTS['colors'],'skin':'#a6613d','hair':'#1c120c','tee':'#2a2a2e','bottom':'#5f76a0','shoes':'#2b2b2b'}},
+    {**DEFAULTS,'name':'Day Off','face':'m2','outfit':'wrap','wrap':'tee_shorts','hair':'short','hat':False,'glasses':False,
+        'colors':{**DEFAULTS['colors'],'skin':'#d69173','hair':'#2b1d14'}},
+    {**DEFAULTS,'name':'Roadie','face':'f3','body':'f','outfit':'wrap','wrap':'tank_jeans','hair':'long','hat':False,'glasses':True,
+        'colors':{**DEFAULTS['colors'],'skin':'#a6613d','hair':'#1c120c'}},
 ]
 
 def read_json(path, default):
@@ -146,7 +140,7 @@ def face_meta(name):
         'custom':name not in face_pipeline.REFS,
     }
 
-PRESET_VERSION = 3   # bump to refresh the built-in presets; the user's own characters are kept
+PRESET_VERSION = 4   # bump to refresh the built-in presets; the user's own characters are kept
 
 def upgrade_face_textures():
     """Custom faces made before the wrapped 1024 layout: rebake from their saved Face Lab settings, or else
@@ -209,8 +203,7 @@ def catalog():
         'model_available':(MODELS/'human.glb').is_file(),
         'animations':['idle','still','walk','run','agent_walk','talk','phone','sit','cower','reach','cuffed','cast','dead'],
         'outfits':list(OUTFITS),
-        'bottoms':list(BOTTOMS),
-        'prints':all_prints(),
+        'wraps':all_wraps(),
         # Versioned by file time so a rebuilt model is never served from the browser cache.
         'base_model':'/models/human.glb?v='+str(int((MODELS/'human.glb').stat().st_mtime)) if (MODELS/'human.glb').is_file() else '/models/human.glb',
         'starter':DEFAULTS,
@@ -277,6 +270,79 @@ def render_face(body:FaceRender):
     f['name']=custom[body.id]['name']
     f['texture']+='?v='+str(int(time.time()))
     return {'ok':True,'face':f}
+
+# ---- Outfit wraps: one picture dressing the whole wrap body, like a face texture dresses the head ----------
+# The sheet is a turnaround, 4096 x 2048: the body from the front, its left side, the back and its right side,
+# side by side (blender_people.py wrap_uv; templates in textures/wrap_template_body_wrap_<m|f>.png).
+# Transparent pixels are skin.
+WRAP_ID = re.compile(r'[a-z0-9_]{1,40}')
+
+def wrap_exists(wid):
+    return isinstance(wid,str) and WRAP_ID.fullmatch(wid) is not None and (TEXTURES/f'wrap_{wid}.png').is_file()
+
+def all_wraps():
+    custom=[w for w in read_json(WRAPS_FILE,[]) if wrap_exists(w.get('id'))]
+    return [{**w,'texture':f"/textures/wrap_{w['id']}.png"} for w in BUILTIN_WRAPS+custom]
+
+def _lin(c): return c/12.92 if c<=.04045 else ((c+.055)/1.055)**2.4
+def _srgb(c): return c*12.92 if c<=.0031308 else 1.055*c**(1/2.4)-.055
+
+def skin_under_wrap(hex_colour):
+    """The colour bare skin has on the kit's other parts: the skin tint times the skin texture (linear light)."""
+    t=[int(hex_colour[i:i+2],16)/255 for i in (1,3,5)]
+    return tuple(round(255*_srgb(_lin(a)*_lin(m))) for a,m in zip(t,RULES['wrap_skin_mean']))
+
+def wrap_over_skin(wid,skin_hex):
+    img=Image.open(TEXTURES/f'wrap_{wid}.png').convert('RGBA')
+    out=Image.new('RGBA',img.size,(*skin_under_wrap(skin_hex),255))
+    out.alpha_composite(img)
+    return out.convert('RGB')
+
+class WrapWrite(BaseModel):
+    name:str
+    image:str                              # data URL (PNG, JPEG or WebP)
+
+@app.post('/api/wraps')
+def add_wrap(body:WrapWrite):
+    m=re.fullmatch(r'data:image/(png|jpeg|jpg|webp);base64,(.+)',body.image.strip(),re.S)
+    if not m: raise HTTPException(400,'Send a PNG, JPEG or WebP image')
+    try: raw=base64.b64decode(m.group(2),validate=True)
+    except ValueError: raise HTTPException(400,'The image data is damaged')
+    if len(raw)>40*1024*1024: raise HTTPException(400,'Image too large (40 MB at most)')
+    try:
+        img=Image.open(io.BytesIO(raw)); img.load()
+    except Exception: raise HTTPException(400,'That file could not be read as an image')
+    if img.width*img.height>80_000_000: raise HTTPException(400,'Image too large')
+    note=None
+    if abs(img.width/img.height-2)>.05: note=f'The picture is {img.width} x {img.height}; wraps are 2:1, so it was stretched to fit.'
+    wid='w'+uuid.uuid4().hex[:10]
+    img.convert('RGBA').resize(WRAP_SIZE,Image.LANCZOS).save(TEXTURES/f'wrap_{wid}.png',optimize=True)
+    item={'id':wid,'name':(body.name.strip() or 'Outfit wrap')[:60],'created':time.strftime('%Y-%m-%d %H:%M')}
+    wraps=read_json(WRAPS_FILE,[]); wraps.insert(0,item); write_json(WRAPS_FILE,wraps)
+    return {'wrap':{**item,'texture':f'/textures/wrap_{wid}.png'},'wraps':all_wraps(),'note':note}
+
+@app.delete('/api/wraps/{wrap_id}')
+def delete_wrap(wrap_id:str):
+    wraps=read_json(WRAPS_FILE,[])
+    left=[w for w in wraps if w.get('id')!=wrap_id]
+    if len(left)==len(wraps): raise HTTPException(404,'No such wrap (the built-in ones stay)')
+    write_json(WRAPS_FILE,left)
+    f=TEXTURES/f'wrap_{wrap_id}.png'
+    if re.fullmatch(r'w[a-f0-9]{10}',wrap_id) and f.is_file(): f.unlink()
+    return {'wraps':all_wraps()}
+
+@app.post('/api/wraps/{wrap_id}/open')
+def open_wrap(wrap_id:str):
+    """Open an imported wrap in the default image editor; the viewer reloads it on save."""
+    if not re.fullmatch(r'w[a-f0-9]{10}',wrap_id) or not wrap_exists(wrap_id): raise HTTPException(400,'Only imported wraps open for editing; import a template to start one')
+    path=TEXTURES/f'wrap_{wrap_id}.png'
+    try:
+        if os.name=='nt': os.startfile(str(path))  # noqa: S606  local tool, fixed path inside the project
+        elif sys.platform=='darwin': subprocess.Popen(['open',str(path)])
+        else: subprocess.Popen(['xdg-open',str(path)])
+    except OSError as ex:
+        raise HTTPException(500,f'Could not open the wrap: {ex}')
+    return {'ok':True,'file':str(path.relative_to(ROOT)).replace('\\','/')}
 
 @app.post('/api/faces/{face_id}/open')
 def open_face_texture(face_id:str):
@@ -424,78 +490,6 @@ def save_shape(body:ShapeWrite):
     write_json(SHAPES_FILE,shapes[:200])
     return {'shape':item,'shapes':shapes[:200]}
 
-# ---- Prints: pictures wrapped onto the T-shirt, tank top, shorts and jeans --------------------------------
-# Those garments are unwrapped front | back (blender_people.py wrap_uv): the left half of a print is the
-# garment's front as seen from the front, the right half its back as seen from behind. Templates showing
-# each garment's outline are in textures/print_template_<part>.png.
-def print_exists(pid):
-    return isinstance(pid,str) and re.fullmatch(r'[a-z0-9_]{1,40}',pid) is not None and (TEXTURES/f'print_{pid}.png').is_file()
-
-def all_prints():
-    custom=[{**p,'texture':f"/textures/print_{p['id']}.png"} for p in read_json(PRINTS_FILE,[]) if print_exists(p.get('id'))]
-    return [{**p,'texture':f"/textures/print_{p['id']}.png"} for p in BUILTIN_PRINTS]+custom
-
-def edge_colour(img):
-    """The picture's border colour (median of its edge pixels): fills the garment around a placed picture."""
-    a=np.asarray(img.convert('RGB'))
-    edge=np.concatenate([a[0],a[-1],a[:,0],a[:,-1]])
-    return tuple(int(v) for v in np.median(edge,axis=0))
-
-def contain(img,w,h):
-    """Scaled to fit inside w x h, keeping its shape."""
-    k=min(w/img.width,h/img.height)
-    return img.resize((max(1,round(img.width*k)),max(1,round(img.height*k))),Image.LANCZOS)
-
-def compose_print(img,mode):
-    S=PRINT_SIZE
-    img=img.convert('RGB')
-    if mode=='wrap':                       # drawn on a template: used as it is
-        return img.resize((S,S),Image.LANCZOS)
-    if mode=='pattern':                    # repeated, about 8 times across the garment
-        tile=contain(img,S//8,S//8) if max(img.size)>S//8 else img
-        out=Image.new('RGB',(S,S))
-        for x in range(0,S,tile.width):
-            for y in range(0,S,tile.height): out.paste(tile,(x,y))
-        return out
-    out=Image.new('RGB',(S,S),edge_colour(img))
-    pic=contain(img,int(S/2*.82),int(S*.82))
-    for half in ((0,) if mode=='front' else (0,S//2)):
-        out.paste(pic,(half+(S//2-pic.width)//2,(S-pic.height)//2))
-    return out
-
-class PrintWrite(BaseModel):
-    name:str
-    mode:str='both'
-    image:str                              # data URL (PNG, JPEG or WebP)
-
-@app.post('/api/prints')
-def add_print(body:PrintWrite):
-    if body.mode not in PRINT_MODES: raise HTTPException(400,'Unknown print layout')
-    m=re.fullmatch(r'data:image/(png|jpeg|jpg|webp);base64,(.+)',body.image.strip(),re.S)
-    if not m: raise HTTPException(400,'Send a PNG, JPEG or WebP image')
-    try: raw=base64.b64decode(m.group(2),validate=True)
-    except ValueError: raise HTTPException(400,'The image data is damaged')
-    if len(raw)>25*1024*1024: raise HTTPException(400,'Image too large (25 MB at most)')
-    try:
-        img=Image.open(io.BytesIO(raw)); img.load()
-    except Exception: raise HTTPException(400,'That file could not be read as an image')
-    if img.width*img.height>64_000_000: raise HTTPException(400,'Image too large')
-    pid='p'+uuid.uuid4().hex[:10]
-    compose_print(img,body.mode).save(TEXTURES/f'print_{pid}.png',optimize=True)
-    item={'id':pid,'name':(body.name.strip() or 'Print')[:60],'mode':body.mode,'created':time.strftime('%Y-%m-%d %H:%M')}
-    prints=read_json(PRINTS_FILE,[]); prints.insert(0,item); write_json(PRINTS_FILE,prints)
-    return {'print':{**item,'texture':f'/textures/print_{pid}.png'},'prints':all_prints()}
-
-@app.delete('/api/prints/{print_id}')
-def delete_print(print_id:str):
-    prints=read_json(PRINTS_FILE,[])
-    left=[p for p in prints if p.get('id')!=print_id]
-    if len(left)==len(prints): raise HTTPException(404,'No such print (the built-in ones stay)')
-    write_json(PRINTS_FILE,left)
-    f=TEXTURES/f'print_{print_id}.png'
-    if re.fullmatch(r'p[a-f0-9]{10}',print_id) and f.is_file(): f.unlink()
-    return {'prints':all_prints()}
-
 @app.delete('/api/shapes/{shape_id}')
 def delete_shape(shape_id:str):
     shapes=read_json(SHAPES_FILE,[])
@@ -527,8 +521,7 @@ def delete_preset(preset_id:str):
 def normalize_character(p):
     if not isinstance(p,dict): raise HTTPException(400,'Invalid character')
     cfg={**DEFAULTS,**p}
-    if cfg.get('bottoms') is None: cfg['bottoms']='trousers'
-    for k,allowed in [('body',('m','f')),('outfit',OUTFITS),('hair',HAIRS),('bottoms',BOTTOMS)]:
+    for k,allowed in [('body',('m','f')),('outfit',OUTFITS),('hair',HAIRS)]:
         if cfg[k] not in allowed: raise HTTPException(400,f'Invalid {k}')
     if not re.fullmatch(r'[a-z][a-z0-9_]{0,20}',str(cfg.get('face',''))): raise HTTPException(400,'Invalid face')
     if not (TEXTURES/f"face_{cfg['face']}.png").is_file(): raise HTTPException(400,'Face texture missing')
@@ -545,10 +538,9 @@ def normalize_character(p):
     if 'lens' in given and 'glasses' not in given: colors['glasses']=given['lens']  # v1.1 name
     cfg['colors']={k:(colors[k] if isinstance(colors[k],str) and re.fullmatch('#[a-fA-F0-9]{6}',colors[k]) else v)
                    for k,v in DEFAULTS['colors'].items()}
-    prints={**DEFAULTS['prints'],**(cfg.get('prints') if isinstance(cfg.get('prints'),dict) else {})}
-    cfg['prints']={k:(prints[k] if print_exists(prints[k]) else v) for k,v in DEFAULTS['prints'].items()}
+    if not wrap_exists(cfg.get('wrap')): cfg['wrap']=DEFAULTS['wrap']
     cfg['shape']=clean_shape(cfg.get('shape'))
-    out={k:cfg[k] for k in ('name','face','body','outfit','bottoms','hair','hat','glasses','scale','animation','fabric','prints','colors')}
+    out={k:cfg[k] for k in ('name','face','body','outfit','hair','hat','glasses','scale','animation','fabric','wrap','colors')}
     if cfg['shape']:
         out['shape']=cfg['shape']
         base=cfg.get('shape_base')
@@ -556,7 +548,7 @@ def normalize_character(p):
     return out
 
 SHAPE_PARTS = {'person_m','person_f','legs_m','legs_coat','outfit_suit','outfit_trench','outfit_shirt','outfit_dress',
-               'hair_short','hair_long','hat','glasses','outfit_tshirt','outfit_tank','legs_shorts','legs_jeans'}
+               'hair_short','hair_long','hat','glasses','body_wrap_m','body_wrap_f'}
 def clean_shape(shape):
     """Mesh edits made in the Forge: {part: [[x, y, z, dx, dy, dz], ...]}, where x, y, z is a vertex's original
     position in the part's glTF mesh space and dx, dy, dz how far it moved (metres). A row can end with
@@ -632,7 +624,12 @@ def export_character(body:ExportRequest):
     uid=uuid.uuid4().hex[:7]
     output=EXPORTS/f'{stem}_{uid}.glb'
     cfgfile=EXPORTS/f'_cfg_{uid}.json'
-    cfgfile.write_text(json.dumps({**char,'rules':RULES}),encoding='utf-8')
+    extra={}
+    if char['outfit']=='wrap':
+        wrapfile=EXPORTS/f'_wrap_{uid}.png'
+        wrap_over_skin(char['wrap'],char['colors']['skin']).save(wrapfile)
+        extra['wrap_file']=str(wrapfile)
+    cfgfile.write_text(json.dumps({**char,**extra,'rules':RULES}),encoding='utf-8')
     cmd=[blender,'-b','-noaudio','-P',str(KIT/'blender'/'export_character.py'),'--',str(cfgfile),str(output)]
     try:
         proc=subprocess.run(cmd,capture_output=True,text=True,timeout=240, cwd=str(ROOT))
@@ -640,6 +637,7 @@ def export_character(body:ExportRequest):
         raise HTTPException(504,'Blender export timed out')
     finally:
         cfgfile.unlink(missing_ok=True)
+        if extra.get('wrap_file'): Path(extra['wrap_file']).unlink(missing_ok=True)
     if proc.returncode!=0 or not output.is_file() or 'CHARACTER_EXPORT_OK' not in proc.stdout:
         raise HTTPException(500,'Blender failed: '+(proc.stderr[-1200:]+'\n'+proc.stdout[-1600:]).strip())
     if body.mode=='glb':
@@ -648,6 +646,7 @@ def export_character(body:ExportRequest):
     with zipfile.ZipFile(zipfile_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
         z.write(output,f'{stem}/{stem}.glb')
         z.write(TEXTURES/f"face_{char['face']}.png",f'{stem}/face_{char["face"]}.png')
+        if char['outfit']=='wrap': z.write(TEXTURES/f"wrap_{char['wrap']}.png",f'{stem}/wrap_{char["wrap"]}.png')
         z.writestr(f'{stem}/character.json',json.dumps(char,indent=2))
         z.writestr(f'{stem}/{stem}.glb.import',godot_import_settings())
         z.writestr('README.txt', GODOT_README.format(name=char['name'], stem=stem))

@@ -86,26 +86,23 @@
 .panel-toggle svg path.fill{fill:currentColor;stroke:none;opacity:.35}
 .panel-toggle.selected svg path.fill{opacity:.9}
 
-/* ---- Wardrobe: bottoms and prints */
-.sub-label{margin:16px 0 8px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8fa395}
-.segment.bottoms-row button{flex:1}
-.segment.bottoms-row button:disabled{opacity:.38;cursor:not-allowed}
-.print-rows{display:grid;gap:8px}
-.print-row{display:grid;grid-template-columns:96px 1fr;align-items:center;gap:10px;font-size:12px;color:#c9d6cc}
-.print-row.hidden{display:none}
-.print-row select{width:100%;background:#101a1f;color:#e7efe9;border:1px solid #2b3b40;border-radius:8px;padding:7px 8px;font:inherit}
-#importPrint{margin:12px 0 0;width:100%}
-.print-dialog{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.print-dialog .print-preview{aspect-ratio:1;width:100%;border-radius:10px;background:#0c1418 center/contain no-repeat;border:1px solid #2b3b40;display:grid;place-items:center;color:#7d9186;font-size:12px;text-align:center}
-.print-modes{display:grid;gap:6px}
-.print-modes label{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid #2b3b40;border-radius:8px;cursor:pointer;font-size:12px;color:#c9d6cc}
-.print-modes label small{display:block;color:#8fa395;margin-top:2px}
-.print-modes input{margin-top:2px}
-.template-links{font-size:12px;color:#8fa395;line-height:1.8}
-.template-links a{color:#cfe8a8;margin-right:10px}
-.print-library{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin-top:6px}
-.print-card{position:relative;border:1px solid #2b3b40;border-radius:8px;overflow:hidden;background:#0c1418}
-.print-card img{display:block;width:100%;aspect-ratio:1;object-fit:cover}
-.print-card span{display:block;padding:4px 6px;font-size:11px;color:#c9d6cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.print-card button{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:0;background:#000a;color:#fff;cursor:pointer}
-@media (max-width:720px){.print-dialog{grid-template-columns:1fr}}
+/* ---- Outfit wraps */
+.sub-label{margin:18px 0 6px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8fa395}
+.wrap-hint{margin:0 0 10px}
+.wrap-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wrap-tile{border:1px solid #394a54;background:#1a2631;border-radius:8px;padding:5px;color:#aab7bb;text-align:left}
+.wrap-tile:hover{border-color:#8aa997}
+.wrap-tile.active{background:#263a31;border-color:#b1cfa9;color:#e0efdc}
+.wrap-tile img{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:5px;background:#b98a6e}
+.wrap-tile span{display:block;font-size:10px;font-weight:700;padding:6px 3px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrap-actions{display:flex;gap:8px;margin-top:10px}
+.wrap-actions .outline-wide{margin:0;width:auto;flex:1}
+.wrap-actions .hidden{display:none}
+.wrap-dialog .wrap-preview{width:100%;aspect-ratio:2/1;border-radius:10px;background:#b98a6e center/contain no-repeat;border:1px solid #2b3b40;display:grid;place-items:center;color:#3b2a20;font-size:12px}
+.template-links{font-size:12px;color:#8fa395;line-height:1.9;margin-top:12px}
+.template-links a{color:#cfe8a8;margin-right:12px}
+.wrap-library{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
+.wrap-card{position:relative;border:1px solid #2b3b40;border-radius:8px;overflow:hidden;background:#0c1418}
+.wrap-card img{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;background:#b98a6e}
+.wrap-card span{display:block;padding:4px 6px;font-size:11px;color:#c9d6cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrap-card button{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:0;background:#000a;color:#fff;cursor:pointer}

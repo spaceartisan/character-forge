@@ -6,7 +6,6 @@ and unselected objects change. No third-party Blender add-ons required.
 import bpy
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -23,17 +22,15 @@ bpy.ops.import_scene.gltf(filepath=str(base))
 sex = cfg.get('body', 'm')
 outfit = cfg.get('outfit', 'suit')
 hair = cfg.get('hair', 'short')
-bottoms = cfg.get('bottoms', 'trousers')
 if sex not in ('m','f'): raise ValueError('Invalid body')
-if outfit not in ('suit','trench','shirt','dress','tshirt','tank'): raise ValueError('Invalid outfit')
-if bottoms not in ('trousers','shorts','jeans'): raise ValueError('Invalid bottoms')
+if outfit not in ('suit','trench','shirt','dress','wrap'): raise ValueError('Invalid outfit')
 if hair not in ('none','short','long'): raise ValueError('Invalid hairstyle')
 # Same rule as the game (character.gd) and static/character-parts.mjs: the dress has its own
-# legs and shoes, so no legs mesh goes under it; the trench wears legs_coat; anything else the chosen
-# bottoms (the Forge's shorts and jeans, or the kit's trousers).
-keep = {f'person_{sex}', f'outfit_{outfit}'}
+# legs and shoes, so no legs mesh goes under it; the trench wears legs_coat.
+# The Forge's outfit wrap is a whole body (body_wrap_m / _f) dressed by one picture: no legs, no outfit mesh.
+keep = {f'person_{sex}', f'body_wrap_{sex}' if outfit == 'wrap' else f'outfit_{outfit}'}
 if outfit == 'trench': keep.add('legs_coat')
-elif outfit != 'dress': keep.add({'trousers': 'legs_m', 'shorts': 'legs_shorts', 'jeans': 'legs_jeans'}[bottoms])
+elif outfit not in ('dress', 'wrap'): keep.add('legs_m')
 if hair != 'none': keep.add('hair_'+hair)
 if cfg.get('hat'): keep.add('hat')
 if cfg.get('glasses'): keep.add('glasses')
@@ -119,7 +116,6 @@ def linear_rgb(value, fallback):
 rules = cfg['rules']
 colors = cfg.get('colors') or {}
 fabric = cfg.get('fabric') or {}
-prints = cfg.get('prints') or {}
 face_id = cfg.get('face', 'agent')
 if not isinstance(face_id,str) or not face_id.replace('_','').isalnum():
     raise ValueError('Invalid face id')
@@ -130,11 +126,9 @@ images = {}
 def image_for(tex):
     """Texture name from the rules -> packed Blender image (each file loaded once)."""
     if tex == '@face': path = face_file
-    elif tex in ('@tee', '@bottom'):   # the Forge's print surfaces
-        pid = prints.get(tex[1:], 'cotton')
-        if not isinstance(pid, str) or not re.fullmatch(r'[a-z0-9_]{1,40}', pid): raise ValueError('Invalid print id')
-        path = root/'assets'/'textures'/f'print_{pid}.png'
-        if not path.is_file(): raise RuntimeError('Missing print texture: '+str(path))
+    elif tex == '@wrap':   # the outfit wrap already laid over the skin colour by server.py
+        path = Path(cfg.get('wrap_file', '')).resolve()
+        if path.parent != (root / 'exports').resolve() or not path.is_file(): raise RuntimeError('Missing outfit wrap texture')
     else:
         if tex == '@top': tex = fabric.get('top', 'cloth')
         elif tex == '@pants': tex = fabric.get('pants', 'cloth')
@@ -163,7 +157,7 @@ def build_material(name, rule, tint_hex):
     tex = nt.nodes.new('ShaderNodeTexImage')
     tex.image = image_for(rule['tex'])
     tex.extension = 'REPEAT'   # face maps wrap round the head; the seam at the back relies on it
-    if rule['tex'] == '@face':
+    if rule['tex'] in ('@face', '@wrap'):   # painted textures: their own colours, no tint
         nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
     else:
         mix = nt.nodes.new('ShaderNodeMix')   # the glTF exporter turns Multiply x colour into baseColorFactor
@@ -184,7 +178,7 @@ for obj in bpy.data.objects:
         if not slot.material: continue
         surface = slot.material.name.split('.')[0]
         # build_material renamed the first part's source material to '<surface>_source'; later parts
-        # sharing that surface (hands and bare arms are both 'skin') still point at it.
+        # sharing that surface (person hands and dress legs are both 'skin') still point at it.
         if surface.endswith('_source'): surface = surface[:-len('_source')]
         rule = part_rule or rules['surfaces'].get(surface)
         if not rule: continue

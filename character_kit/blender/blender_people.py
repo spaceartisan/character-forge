@@ -13,11 +13,10 @@ The GLB holds these meshes, which Character (scripts/world/character.gd) shows a
   legs_coat              the same from mid-thigh down, worn under the trench coat
   outfit_suit, outfit_trench, outfit_shirt, outfit_dress
   hat, hair_short, hair_long, glasses
-Character Forge additions (built after the game's parts, which come out exactly as before):
-  outfit_tshirt, outfit_tank   with bare arms (the tank also a skin torso under its armholes and neckline)
-  legs_shorts, legs_jeans      the shorts with bare legs and sneakers
+Character Forge addition (built after the game's parts, which come out exactly as before):
+  body_wrap_m, body_wrap_f   a plain body, neck to feet, dressed entirely by one picture (an outfit wrap)
 Surfaces are named by material so Godot dresses them: face, skin, top, shirt, tie, pants, shoes, skirt, hat, band, hair, lens.
-The Forge's print surfaces, tee and bottom, are unwrapped front | back (wrap_uv) so a picture wraps on like a face.
+The wrap body's surface is 'wrap', unwrapped as a turnaround sheet (wrap_uv): front, left side, back, right side.
 """
 import bpy, math, os, sys
 import numpy as np
@@ -194,7 +193,7 @@ class Build:
     def __init__(self, arm):
         self.arm = arm
         self.bones = {b.name: (np.array(b.head_local), np.array(b.tail_local)) for b in arm.data.bones}
-        self.layouts = {}   # name -> per-triangle UVs of its wrap-unwrapped surfaces (for the print templates)
+        self.layouts = {}   # name -> its wrap-unwrapped triangles: UVs, positions, piece tags (templates, built-in wraps)
 
     def weights(self, v, allowed, skirt_from=None, skirt_over=.35):
         names = list(allowed)
@@ -265,9 +264,10 @@ class Build:
         if wrap:
             loop_uv = loop_uv.reshape(-1, 3, 2)
             t0 = np.cumsum([0] + [len(t) for t in ts])
-            sel = [(tris[t0[i]:t0[i + 1]], pieces[i]["f"]) for i in wrap]
-            loop_uv[np.concatenate([np.arange(t0[i], t0[i + 1]) for i in wrap])] = wrap_uv(verts, sel)
-            self.layouts[name] = np.concatenate([loop_uv[t0[i]:t0[i + 1]] for i in wrap])
+            rows = np.concatenate([np.arange(t0[i], t0[i + 1]) for i in wrap])
+            loop_uv[rows] = wrap_uv(verts, [(tris[t0[i]:t0[i + 1]], pieces[i]["f"], pieces[i].get("tag", "")) for i in wrap])
+            self.layouts[name] = dict(uv=loop_uv[rows].copy(), pos=verts[tris[rows]],
+                                      tag=np.concatenate([[pieces[i].get("tag", "")] * (t0[i + 1] - t0[i]) for i in wrap]))
             loop_uv = loop_uv.reshape(-1, 2)
         uv.data.foreach_set("uv", loop_uv.ravel())
         col = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
@@ -294,61 +294,151 @@ class Build:
         return ob
 
 
+# Outfit wraps: a turnaround sheet, 4096 x 2048 px, four panels side by side: the body seen from the front,
+# from its left (+x), from behind and from its right. Every triangle goes to the panel it faces most and is
+# projected straight on. One fixed scale for both bodies (1240 px per metre, feet at the bottom edge), so a
+# wrap painted for one fits the other.
+WRAP_SIZE = (4096, 2048)
+WRAP_KV = .62                    # v per metre: 1.53 m of body in .95 of the height
+WRAP_KU = WRAP_KV / 2            # the sheet is twice as wide as it is tall
+WRAP_V0 = .025
+WRAP_PANELS = (.125, .375, .625, .875)
+# In the side views the arm hangs over the torso's side; drawn there, the two would share pixels. The arm's
+# side views sit to the right of the torso in their panels instead (metres across).
+WRAP_ARM_SIDE = .27
+
+
 def wrap_uv(verts, pieces):
-    """Print layout for a garment: the left half of the texture is its front, seen from the front, and the
-    right half its back, seen from behind, both projected straight on. Each triangle goes to the side its
-    surface faces (the field's gradient), so a picture lands on the garment the way it looks in the image.
-    Same scale across and up, fitted to the garment with a margin; the two halves share it."""
-    allt = np.concatenate([t for t, _ in pieces])
-    used = verts[np.unique(allt)]
-    half_w = np.abs(used[:, 0]).max()
-    z0, z1 = used[:, 2].min(), used[:, 2].max()
-    k = min(.46 / (2 * half_w), .94 / (z1 - z0))
     out = []
-    for t, f in pieces:
+    for t, f, tag in pieces:
         c = verts[t].mean(1)
         e = .002
+        gx = f(c[:, 0] + e, c[:, 1], c[:, 2]) - f(c[:, 0] - e, c[:, 1], c[:, 2])
         gy = f(c[:, 0], c[:, 1] + e, c[:, 2]) - f(c[:, 0], c[:, 1] - e, c[:, 2])
-        front = (gy < 0)[:, None]                      # front of the body is -Y
-        p = verts[t]                                   # (triangles, 3 corners, xyz)
-        u = np.where(front, .25 + p[..., 0] * k, .75 - p[..., 0] * k)
-        v = .5 + (p[..., 2] - (z0 + z1) / 2) * k
-        out.append(np.stack([u, v], -1))
+        view = np.where(np.abs(gy) >= np.abs(gx), np.where(gy < 0, 0, 2), np.where(gx > 0, 1, 3))[:, None]
+        p = verts[t]
+        x, y, z = p[..., 0], p[..., 1], p[..., 2]
+        # Screen right in each view: front +x, from the left +y, from behind -x, from the right -y.
+        across = np.select([view == 0, view == 1, view == 2], [x, y, -x], -y)
+        if tag == "arm":
+            across = across + WRAP_ARM_SIDE * ((view == 1) | (view == 3))
+        u = np.choose(view, WRAP_PANELS) + across * WRAP_KU
+        out.append(np.stack([u, WRAP_V0 + z * WRAP_KV], -1))
     return np.concatenate(out)
 
 
-def write_templates(layouts, folder, size=1024):
-    """A guide per print garment: its front and back outlines on the texture, to paint or place a picture on."""
+def raster(tri_uv, size):
+    """Each triangle's pixels on a W x H sheet: yields (triangle index, rows, cols, barycentric weights)."""
+    W, H = size
+    for i, t in enumerate(tri_uv * (W, H)):
+        x0, y0 = np.maximum(np.floor(t.min(0)).astype(int), 0)
+        x1, y1 = np.minimum(np.ceil(t.max(0)).astype(int), (W - 1, H - 1))
+        if x1 < x0 or y1 < y0:
+            continue
+        X, Y = np.meshgrid(np.arange(x0, x1 + 1) + .5, np.arange(y0, y1 + 1) + .5)
+        (ax, ay), (bx, by), (cx, cy) = t
+        den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(den) < 1e-9:
+            continue
+        l1 = ((by - cy) * (X - cx) + (cx - bx) * (Y - cy)) / den
+        l2 = ((cy - ay) * (X - cx) + (ax - cx) * (Y - cy)) / den
+        l3 = 1 - l1 - l2
+        inside = (l1 >= -.02) & (l2 >= -.02) & (l3 >= -.02)
+        if inside.any():
+            yield i, (Y[inside] - .5).astype(int), (X[inside] - .5).astype(int), np.stack([l1[inside], l2[inside], l3[inside]], 1)
+
+
+def save_image(img, path):
+    H, W = img.shape[:2]
+    im = bpy.data.images.new("wrap_out", W, H, alpha=True)
+    im.pixels.foreach_set(img.astype(np.float32).ravel())   # Blender images start at the bottom row, like UV v
+    im.filepath_raw = path
+    im.file_format = "PNG"
+    im.save()
+    bpy.data.images.remove(im)
+
+
+def write_templates(layouts, folder):
+    """A guide per wrap body: its four views filled in, panel lines between them, to paint an outfit on."""
     os.makedirs(folder, exist_ok=True)
-    for name, tri_uv in layouts.items():
-        img = np.ones((size, size, 4), dtype=np.float32)
-        img[:, size // 2 - 1:size // 2 + 1, :3] = .55                      # front | back divider
-        for t in tri_uv * size:                                            # fill the garment's shape
-            x0, y0 = np.maximum(np.floor(t.min(0)).astype(int), 0)
-            x1, y1 = np.minimum(np.ceil(t.max(0)).astype(int), size - 1)
-            if x1 < x0 or y1 < y0: continue
-            X, Y = np.meshgrid(np.arange(x0, x1 + 1) + .5, np.arange(y0, y1 + 1) + .5)
-            (ax, ay), (bx, by), (cx, cy) = t
-            den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-            if abs(den) < 1e-9: continue
-            l1 = ((by - cy) * (X - cx) + (cx - bx) * (Y - cy)) / den
-            l2 = ((cy - ay) * (X - cx) + (ax - cx) * (Y - cy)) / den
-            inside = (l1 >= -.01) & (l2 >= -.01) & (1 - l1 - l2 >= -.01)
-            img[y0:y1 + 1, x0:x1 + 1, :3][inside] = (.86, .9, .97)
-        for a, b in ((0, 1), (1, 2), (2, 0)):
-            p, q = tri_uv[:, a], tri_uv[:, b]
-            for t in np.linspace(0, 1, 6):
-                pt = p + (q - p) * t
-                x = np.clip((pt[:, 0] * size).astype(int), 0, size - 1)
-                y = np.clip((pt[:, 1] * size).astype(int), 0, size - 1)
-                img[y, x, :3] = (.62, .7, .86)
-        im = bpy.data.images.new("tpl_" + name, size, size, alpha=True)
-        im.pixels.foreach_set(img.ravel())          # Blender images start at the bottom row, like UV v
-        im.filepath_raw = os.path.join(folder, f"print_template_{name}.png")
-        im.file_format = "PNG"
-        im.save()
-        bpy.data.images.remove(im)
+    W, H = WRAP_SIZE
+    for name, lay in layouts.items():
+        img = np.ones((H, W, 4))
+        for i, rows, cols, _ in raster(lay["uv"], WRAP_SIZE):
+            img[rows, cols, :3] = (.86, .9, .97)
+        for k in range(1, 4):
+            img[:, k * W // 4 - 2:k * W // 4 + 2, :3] = .6
+        img[int(WRAP_V0 * H), :, :3] = .6                                    # the floor
+        save_image(img, os.path.join(folder, f"wrap_template_{name}.png"))
         print("TEMPLATE", name)
+
+
+def bake_wraps(layouts, folder, looks, bleed=24):
+    """Built-in outfit wraps, painted from 3D: each pixel's point on the body decides its colour. Transparent
+    pixels are skin (the Forge lays the character's skin colour under the wrap). One picture serves both
+    bodies: painted from the first layout, then the second fills what the first left uncovered, then the
+    colours bleed a little past every outline so neither body samples unpainted pixels at its edges."""
+    W, H = WRAP_SIZE
+    for name, paint in looks.items():
+        img = np.zeros((H, W, 4)); covered = np.zeros((H, W), bool)
+        for lay in layouts:
+            for i, rows, cols, bary in raster(lay["uv"], WRAP_SIZE):
+                new = ~covered[rows, cols]
+                if not new.any():
+                    continue
+                p = bary[new] @ lay["pos"][i]
+                img[rows[new], cols[new]] = paint(p[:, 0], p[:, 1], p[:, 2], lay["tag"][i])
+            for i, rows, cols, _ in raster(lay["uv"], WRAP_SIZE):
+                covered[rows, cols] = True
+        for _ in range(bleed):
+            grow = np.zeros_like(img); n = np.zeros((H, W))
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                c = np.roll(covered, (dy, dx), (0, 1))
+                grow += np.roll(img, (dy, dx), (0, 1)) * c[..., None]; n += c
+            edge = ~covered & (n > 0)
+            img[edge] = grow[edge] / n[edge][:, None]
+            covered |= edge
+        save_image(img, os.path.join(folder, f"wrap_{name}.png"))
+        print("WRAP", name)
+
+
+def _rgba(mask, rgb, base):
+    base[mask] = (*rgb, 1)
+    return base
+
+
+def look_tee_shorts(x, y, z, tag):
+    c = np.zeros((len(x), 4))
+    tee, hem, shorts, sock, shoe, sole = (.8, .3, .24), (.66, .22, .18), (.74, .66, .48), (.95, .95, .93), (.93, .93, .91), (.32, .32, .34)
+    if tag == "torso":
+        # Crew neck: the collar dips at the front, and the neck above it is skin
+        neck = 1.455 - .035 * (y < 0) * np.clip(1 - (x / .075) ** 2, 0, 1)
+        _rgba((z >= .885) & (z < neck), tee, c); _rgba((z >= .885) & (z < .9), hem, c); _rgba((z >= neck - .014) & (z < neck), hem, c)
+        _rgba(z < .885, shorts, c); _rgba((z > .955) & (z < .975), (.6, .53, .38), c)
+    elif tag == "arm":
+        _rgba(z >= 1.245, tee, c); _rgba((z >= 1.245) & (z < 1.26), hem, c)
+    elif tag == "legs":
+        _rgba(z >= .6, shorts, c); _rgba((z >= .6) & (z < .615), (.6, .53, .38), c); _rgba(z < .13, sock, c)
+    elif tag == "feet":
+        _rgba(z >= 0, shoe, c); _rgba(z < .022, sole, c)
+    return c
+
+
+def look_tank_jeans(x, y, z, tag):
+    c = np.zeros((len(x), 4))
+    tank, denim, belt, boot, sole = (.15, .15, .17), (.3, .4, .58), (.26, .17, .1), (.3, .2, .12), (.12, .1, .09)
+    ax = np.abs(x)
+    if tag == "torso":
+        armhole = ((ax - .175) / .06) ** 2 + ((z - 1.39) / .11) ** 2 < 1
+        scoop = (y < 0) & ((x / .075) ** 2 + ((z - 1.5) / .1) ** 2 < 1)
+        back = (y > 0) & ((x / .068) ** 2 + ((z - 1.52) / .07) ** 2 < 1)
+        _rgba((z >= .9) & ~armhole & ~scoop & ~back & (z < 1.49), tank, c)
+        _rgba(z < .9, denim, c); _rgba((z > .955) & (z < .985), belt, c)
+    elif tag == "legs":
+        _rgba(z >= .09, denim, c)
+    elif tag == "feet":
+        _rgba(z >= 0, boot, c); _rgba(z < .02, sole, c)
+    return c
 
 
 def cloth_uv(v):
@@ -567,11 +657,10 @@ def _front_curve(table, depth):
     return zs, cy - ry - depth
 
 
-def legs_pieces(cut=None, mat="pants", crease=True, uv=None):
+def legs_pieces(cut=None):
     """cut: for under a long coat. Above this height the trousers are slimmed so the thighs stay inside the coat
     when they swing. (They used to stop dead at the cut, which left a hole at the crotch that showed through the
     trench coat's open front: the person mesh is only head, neck and hands.)"""
-    pressed = crease
     def pants(x, y, z):
         ax = np.abs(x)
         d = loft(x, y, z, [(.86, .176, .116, .008), (.94, .176, .114, .008), (1.02, .162, .104, .006)])
@@ -580,8 +669,7 @@ def legs_pieces(cut=None, mat="pants", crease=True, uv=None):
         d = smin(d, leg, .022)
         # Pressed crease down the shin and thigh
         crease = np.exp(-((ax - .086) / .009) ** 2) * sstep(.1, .15, z) * (1 - sstep(.72, .86, z))
-        if pressed:
-            d = d - .0035 * crease
+        d = d - .0035 * crease
         # Belt
         d = d - .004 * band(z, .975, 1.005, .002)
         d = np.maximum(d, .085 - z)
@@ -602,10 +690,7 @@ def legs_pieces(cut=None, mat="pants", crease=True, uv=None):
         # positive everywhere outside the band and so deleted the whole shoe but a 5 mm slice: no feet.)
         return d + .0015 * band(z, .018, .023, .0015)
     b = ["hips", "upper_leg.L", "upper_leg.R", "lower_leg.L", "lower_leg.R"]
-    pp = dict(f=pants, lo=(-.2, -.14, .07), hi=(.2, .14, 1.03), step=.0065, tris=1500, mat=mat, bones=b, ao_with=[shoes])
-    if uv:
-        pp["uv"] = uv
-    return [pp,
+    return [dict(f=pants, lo=(-.2, -.14, .07), hi=(.2, .14, 1.03), step=.0065, tris=1500, mat="pants", bones=b, ao_with=[shoes]),
             dict(f=shoes, lo=(-.16, -.21, -.004), hi=(.16, .12, .16), step=.0048, tris=1100, mat="shoes", bones=["foot.L", "foot.R", "lower_leg.L", "lower_leg.R"], ao_with=[pants], smooth=2)]
 
 
@@ -732,86 +817,54 @@ def outfit_dress(b):
     return b.object("outfit_dress", pieces)
 
 
-# ------------------------------------------------------------------ Character Forge garments
-# Worn untucked over the trousers' waistband (1.03 m, up to 0.176 x 0.116), so roomier than the shirt below the chest.
-TEE = [(.87, .194, .134, .01), (.95, .192, .13, .008), (1.06, .186, .124, .005), (1.16, .176, .116, .003), (1.26, .174, .114, 0)] + SHIRT[4:]
-ARM_SKIN = dict(shoulder=.047, elbow=.037, wrist=.029)
+# ------------------------------------------------------------------ Character Forge: the wrap body
+# One smooth body from the neck down (the head and hands come from person_m / person_f), to be dressed
+# entirely by a picture. Close-fitting, so painted clothes read as clothes; no garment geometry.
+BODY_M = [(.84, .158, .1, 0), (.92, .168, .106, .004), (1.0, .156, .1, .004), (1.08, .144, .094, .002), (1.16, .146, .096, 0),
+          (1.26, .158, .1, -.002), (1.34, .17, .104, -.004), (1.4, .176, .096, 0), (1.44, .158, .08, .004), (1.47, .1, .062, .01),
+          (1.5, .06, .056, .012), (1.53, .055, .055, .012)]
+BODY_F = [(.84, .166, .104, 0), (.92, .178, .11, .004), (1.0, .164, .102, .004), (1.08, .134, .09, .002), (1.16, .128, .088, 0),
+          (1.26, .14, .092, -.004), (1.34, .148, .094, -.006), (1.4, .156, .088, 0), (1.44, .144, .076, .004), (1.47, .094, .06, .01),
+          (1.5, .056, .052, .012), (1.53, .052, .052, .012)]
 
 
-def bare_arms(top=1.4):
-    """Skin from inside the sleeve (or the shoulder) down into the hand's wrist."""
-    out = []
-    for side, sg, bones in (("L", 1, ARM_L), ("R", -1, ARM_R)):
-        s, e, w = (sg * .195, 0, top), (sg * .231, .012, 1.147), (sg * .245, -.02, .935)
-        def f(x, y, z, s=s, e=e, w=w):
-            d = smin(cone(x, y, z, s, e, ARM_SKIN["shoulder"], ARM_SKIN["elbow"]), cone(x, y, z, e, w, ARM_SKIN["elbow"], ARM_SKIN["wrist"]), .02)
-            return np.maximum(d, .925 - z)
-        x0, x1 = sorted((sg * .13, sg * .3))
-        out.append(dict(f=f, lo=(x0, -.08, .91), hi=(x1, .07, top + .06), step=.005, tris=700, mat="skin", bones=bones))
-    return out
-
-
-def neckband(rx=.066):
-    """The ribbed band of a crew neck."""
-    def f(x, y, z):
-        d = loft(x, y, z, [(1.49, rx + .006, rx + .002, .012), (1.522, rx + .002, rx - .002, .013)])
-        return np.maximum(d, -loft(x, y, z, [(1.48, rx - .006, rx - .008, .012), (1.53, rx - .008, rx - .01, .013)]))
-    return f
-
-
-def outfit_tshirt(b):
-    def body(x, y, z):
-        d = shoulders(x, y, z, loft(x, y, z, TEE), .006)
-        return d - .0012 * np.sin(np.arctan2(x, y) * 9) * (1 - sstep(.88, 1.02, z))   # a little drape at the hem
-    band_f = neckband()
-    pieces = [dict(f=body, lo=(-.21, -.15, .86), hi=(.21, .15, 1.54), step=.0052, tris=2200, mat="tee", bones=TORSO_BONES, uv="wrap"),
-              dict(f=band_f, lo=(-.09, -.1, 1.47), hi=(.09, .09, 1.54), step=.003, tris=360, mat="tee", bones=["chest", "neck"], ao_with=[body], uv="wrap")]
-    for side, sg, bones in (("L", 1, ARM_L), ("R", -1, ARM_R)):
-        x0, x1 = sorted((sg * .12, sg * .3))
-        pieces.append(dict(f=sleeve_field(sg, .062, .058, .056, 1.24), lo=(x0, -.1, 1.22), hi=(x1, .1, 1.5), step=.0055, tris=520, mat="tee", bones=bones, ao_with=[body], uv="wrap"))
-    pieces += bare_arms(1.3)
-    return b.object("outfit_tshirt", pieces)
-
-
-def outfit_tank(b):
-    def body(x, y, z):
-        ax = np.abs(x)
-        d = loft(x, y, z, TEE)
-        d = np.maximum(d, -ell(ax, y, z, (.205, .0, 1.37), (.085, .16, .135)))          # armholes
-        d = np.maximum(d, -ell(x, y, z, (0, -.12, 1.5), (.085, .1, .11)))               # scoop neck
-        d = np.maximum(d, -ell(x, y, z, (0, .12, 1.53), (.075, .08, .06)))              # a little lower at the back
-        return d
+def body_wrap(b, name, fem):
+    k = .9 if fem else 1.0
+    inset = .016 if fem else 0.0
     def torso(x, y, z):
-        # Well inside the tank everywhere it isn't cut away (the tank is TEE: 0.174 x 0.114 at 1.26 m)
-        return loft(x, y, z, [(1.2, .15, .094, .004), (1.3, .152, .096, 0), (1.38, .16, .094, -.004), (1.44, .152, .08, .004),
-                              (1.48, .104, .066, .012), (1.51, .064, .06, .012), (1.53, .057, .057, .012)])
-    pieces = [dict(f=body, lo=(-.21, -.15, .86), hi=(.21, .15, 1.54), step=.0052, tris=2200, mat="tee", bones=TORSO_BONES, uv="wrap", ao_with=[torso]),
-              dict(f=torso, lo=(-.19, -.13, 1.19), hi=(.19, .12, 1.54), step=.0055, tris=900, mat="skin", bones=["chest", "spine", "neck"])]
-    pieces += bare_arms(1.43)
-    return b.object("outfit_tank", pieces)
-
-
-def legs_shorts(b):
-    def shorts(x, y, z):
         ax = np.abs(x)
-        d = loft(x, y, z, [(.86, .18, .12, .008), (.94, .178, .116, .008), (1.02, .164, .106, .006)])
-        leg = cone(ax, y, z, (.088, -.002, .9), (.09, -.008, .58), .1, .084)
-        d = smin(d, leg, .022)
-        d = d - .004 * band(z, .975, 1.005, .002)                                        # waistband
-        return np.maximum(d, .6 - z)
+        d = loft(x, y, z, BODY_F if fem else BODY_M)
+        d = smin(d, ell(ax, y, z, (.17 - inset, .0, 1.41), (.05, .066, .05)), .03)              # shoulders
+        if fem:
+            d = smin(d, ell(ax, y, z, (.06, -.068, 1.3), (.056, .044, .05)), .035)              # bust
+        return d
+    def arm(sg):
+        s, e, w = (sg * (.19 - inset), 0, 1.4), (sg * (.231 - inset * .5), .012, 1.147), (sg * .245, -.02, .935)
+        def f(x, y, z):
+            d = smin(cone(x, y, z, s, e, .048 * k, .037 * k), cone(x, y, z, e, w, .037 * k, .029 * k), .02)
+            return np.maximum(d, .925 - z)
+        return f
     def legs(x, y, z):
         ax = np.abs(x)
-        thigh = cone(ax, y, z, (.084, -.002, .78), (.084, -.012, .51), .072, .052)
-        calf = cone(ax, y, z, (.084, -.012, .51), (.085, .006, .34), .052, .05)
-        shin = cone(ax, y, z, (.085, .006, .34), (.086, .008, .1), .05, .033)
-        return np.maximum(smin(smin(thigh, calf, .02), shin, .03), z - .8)
-    shoes = dict(legs_pieces()[1])
-    shoes["ao_with"] = [legs]
+        d = loft(x, y, z, [(.8, .165 * k + (.012 if fem else 0), .106, .004), (.9, .17 + (.01 if fem else 0), .108, .004), (.98, .16, .102, .004)])
+        thigh = cone(ax, y, z, (.084, -.002, .88), (.084, -.012, .51), .082 if not fem else .078, .052 * k)
+        calf = cone(ax, y, z, (.084, -.012, .51), (.085, .004, .35), .052 * k, .05 * k)
+        shin = cone(ax, y, z, (.085, .004, .35), (.086, .008, .09), .05 * k, .033 * k)
+        return smin(d, smin(smin(thigh, calf, .02), shin, .03), .03)
+    def feet(x, y, z):
+        ax = np.abs(x)
+        d = ell(ax, y, z, (.086, -.048, .034), (.042 * k, .118 * k, .036))
+        d = smin(d, ell(ax, y, z, (.086, .028, .05), (.038 * k, .045, .05)), .025)
+        d = smin(d, cone(ax, y, z, (.086, .006, .06), (.086, .007, .13), .036 * k, .034 * k), .02)
+        return np.maximum(d, -z)
     leg_bones = ["hips", "upper_leg.L", "upper_leg.R", "lower_leg.L", "lower_leg.R"]
-    pieces = [dict(f=shorts, lo=(-.21, -.15, .58), hi=(.21, .15, 1.03), step=.006, tris=1300, mat="bottom", bones=leg_bones, uv="wrap", ao_with=[legs]),
-              dict(f=legs, lo=(-.17, -.09, .06), hi=(.17, .08, .82), step=.006, tris=1000, mat="skin", bones=leg_bones[1:]),
-              shoes]
-    return b.object("legs_shorts", pieces)
+    pieces = [dict(f=torso, lo=(-.24, -.15, .82), hi=(.24, .14, 1.54), step=.005, tris=3000, mat="wrap", bones=TORSO_BONES + ["neck"], uv="wrap", tag="torso")]
+    for side, sg, bones in (("L", 1, ARM_L), ("R", -1, ARM_R)):
+        x0, x1 = sorted((sg * .13, sg * .3))
+        pieces.append(dict(f=arm(sg), lo=(x0, -.08, .91), hi=(x1, .07, 1.46), step=.005, tris=800, mat="wrap", bones=bones, uv="wrap", tag="arm"))
+    pieces += [dict(f=legs, lo=(-.2, -.13, .07), hi=(.2, .13, 1.0), step=.006, tris=2000, mat="wrap", bones=leg_bones, uv="wrap", tag="legs", ao_with=[torso]),
+               dict(f=feet, lo=(-.15, -.19, -.004), hi=(.15, .1, .15), step=.0045, tris=900, mat="wrap", bones=["foot.L", "foot.R", "lower_leg.L", "lower_leg.R"], uv="wrap", tag="feet", ao_with=[legs], smooth=2)]
+    return b.object(name, pieces)
 
 
 # ------------------------------------------------------------------ hats and hair
@@ -906,12 +959,12 @@ outfit_dress(b)
 hat_parts(b)
 hair_parts(b)
 glasses(b)
-# Character Forge garments: after the game's parts, so those come out exactly as before.
-outfit_tshirt(b)
-outfit_tank(b)
-legs_shorts(b)
-b.object("legs_jeans", legs_pieces(mat="bottom", crease=False, uv="wrap"))
-write_templates(b.layouts, os.path.join(OUT, "..", "textures"))
+# Character Forge: the wrap bodies, after the game's parts so those come out exactly as before.
+body_wrap(b, "body_wrap_m", False)
+body_wrap(b, "body_wrap_f", True)
+TEX = os.path.join(OUT, "..", "textures")
+write_templates(b.layouts, TEX)
+bake_wraps([b.layouts["body_wrap_m"], b.layouts["body_wrap_f"]], TEX, {"tee_shorts": look_tee_shorts, "tank_jeans": look_tank_jeans})
 build_anims(arm)
 export(os.path.join(OUT, "human.glb"), colors=True)
 print("BLENDER_DONE")

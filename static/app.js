@@ -1,12 +1,12 @@
 /* Character Forge — UI and asset pipeline. No build step required. */
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const fallback = {name:'The Pale Agent',face:'agent',body:'m',outfit:'suit',bottoms:'trousers',hair:'none',hat:true,glasses:true,animation:'idle',scale:1,fabric:{top:'suitcloth',pants:'suitcloth'},prints:{tee:'cotton',bottom:'twill'},colors:{tee:'#e6e3dc',bottom:'#5f76a0',skin:'#c2c9c1',hair:'#332419',top:'#212125',shirt:'#dbd9cc',tie:'#080809',pants:'#333338',shoes:'#4c4c4c',skirt:'#664c4c',hat:'#212125',band:'#0d0d0e',glasses:'#080809'}};
+const fallback = {name:'The Pale Agent',face:'agent',body:'m',outfit:'suit',hair:'none',hat:true,glasses:true,animation:'idle',scale:1,fabric:{top:'suitcloth',pants:'suitcloth'},wrap:'tee_shorts',colors:{skin:'#c2c9c1',hair:'#332419',top:'#212125',shirt:'#dbd9cc',tie:'#080809',pants:'#333338',shoes:'#4c4c4c',skirt:'#664c4c',hat:'#212125',band:'#0d0d0e',glasses:'#080809'}};
 // Fill gaps in characters saved by older versions (no fabric, 'lens' instead of 'glasses').
-function upgrade(c){const base=structuredClone(catalog?.starter||fallback);const colors={...base.colors,...(c.colors||{})};if(c.colors?.lens&&!c.colors?.glasses)colors.glasses=c.colors.lens;delete colors.lens;const {id,preset_version,...plain}=c;return {...base,...structuredClone(plain),fabric:{...base.fabric,...(c.fabric||{})},prints:{...base.prints,...(c.prints||{})},colors}}
+function upgrade(c){const base=structuredClone(catalog?.starter||fallback);const colors={...base.colors,...(c.colors||{})};if(c.colors?.lens&&!c.colors?.glasses)colors.glasses=c.colors.lens;delete colors.lens;const {id,preset_version,...plain}=c;return {...base,...structuredClone(plain),fabric:{...base.fabric,...(c.fabric||{})},colors}}
 let catalog = null, chosen = structuredClone(fallback), activeFaceFilter='all', activeTab='appearance';
 let viewer=null, playing=true, faceLab=null, notifyTimeout=0;
-const PALETTE_LABELS = {skin:'Hands / skin',hair:'Hair',top:'Outer garment',shirt:'Shirt & collar',tie:'Tie',pants:'Trousers',tee:'T-shirt / tank top',bottom:'Shorts / jeans',shoes:'Shoes',skirt:'Skirt',hat:'Hat felt',band:'Hat band',glasses:'Glasses'};
+const PALETTE_LABELS = {skin:'Hands / skin',hair:'Hair',top:'Outer garment',shirt:'Shirt & collar',tie:'Tie',pants:'Trousers',shoes:'Shoes',skirt:'Skirt',hat:'Hat felt',band:'Hat band',glasses:'Glasses'};
 const safeText=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 const uid=()=>Math.random().toString(36).slice(2,10);
 function toast(msg,isError=false){const el=$('#toast'); el.textContent=msg;el.classList.toggle('error',isError);el.classList.add('visible');clearTimeout(notifyTimeout);notifyTimeout=setTimeout(()=>el.classList.remove('visible'),4800)}
@@ -27,7 +27,7 @@ function syncControls(){renderBaseShape();
  $('#animationSelect').value=chosen.animation;
  $$('[data-body]').forEach(x=>x.classList.toggle('active',x.dataset.body===chosen.body));
  $$('[data-outfit]').forEach(x=>x.classList.toggle('active',x.dataset.outfit===chosen.outfit));
- syncWardrobe();
+ renderWraps();
  $$('[data-hair]').forEach(x=>x.classList.toggle('active',x.dataset.hair===chosen.hair));
  $$('[data-clip]').forEach(x=>x.classList.toggle('active',x.dataset.clip===chosen.animation));
  $$('.color-field input').forEach(i=>{i.value=chosen.colors[i.dataset.color]||'#ffffff';i.closest('.color-field').querySelector('.hex-label').textContent=i.value.toUpperCase()});
@@ -104,7 +104,7 @@ async function openPaintPanel(){
  if(!viewer)return toast('The 3D view is not ready',true);
  closeMapPanel();closeShapePanel();
  try{
-  paintMod=paintMod||await import('/static/painter.js?v=2.9.0');
+  paintMod=paintMod||await import('/static/painter.js?v=2.9.1');
   if(!painter)painter=new paintMod.FacePainter(viewer,$('#stage'),{onChange:renderPaintPanel,onPick:()=>{if(painter.tool==='pick')painter.tool='paint'}});
   paintFace=chosen.face;setStatus('LOADING FACE '+paintFace.toUpperCase()+' FOR TOUCH-UPS…');
   await painter.start(paintFace);
@@ -165,7 +165,7 @@ async function clearPaint(){
 }
 // Edit shape: select vertices, edges or faces and move them (shape.js). Edits belong to the character.
 let shapeEd=null;
-const PART_LABEL={person_m:'Body (masculine)',person_f:'Body (feminine)',legs_m:'Legs',legs_coat:'Legs (coat)',outfit_suit:'Suit',outfit_trench:'Trench coat',outfit_shirt:'Shirt',outfit_dress:'Dress',outfit_tshirt:'T-shirt',outfit_tank:'Tank top',legs_shorts:'Shorts',legs_jeans:'Jeans',hair_short:'Short hair',hair_long:'Long hair',hat:'Hat',glasses:'Glasses'};
+const PART_LABEL={person_m:'Body (masculine)',person_f:'Body (feminine)',body_wrap_m:'Wrap body (masculine)',body_wrap_f:'Wrap body (feminine)',legs_m:'Legs',legs_coat:'Legs (coat)',outfit_suit:'Suit',outfit_trench:'Trench coat',outfit_shirt:'Shirt',outfit_dress:'Dress',hair_short:'Short hair',hair_long:'Long hair',hat:'Hat',glasses:'Glasses'};
 function openShapePanel(){
  showInspector();
  if(!viewer)return toast('The 3D view is not ready',true);
@@ -284,9 +284,8 @@ function setupControls(){
  $$('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
  $$('[data-body]').forEach(b=>b.onclick=()=>{chosen.body=b.dataset.body;syncControls();dirty()});
  $$('[data-outfit]').forEach(b=>b.onclick=()=>{chosen.outfit=b.dataset.outfit;syncControls();dirty()});
- $$('[data-bottoms]').forEach(b=>b.onclick=()=>{chosen.bottoms=b.dataset.bottoms;syncControls();dirty()});
- $$('[data-print]').forEach(el=>el.onchange=e=>{chosen.prints={...chosen.prints,[e.target.dataset.print]:e.target.value};dirty()});
- $('#importPrint').onclick=showPrintImport;
+ $('#importWrap').onclick=showWrapImport;
+ $('#openWrap').onclick=async()=>{try{const r=await api('/api/wraps/'+encodeURIComponent(chosen.wrap)+'/open',{method:'POST',body:'{}'});toast('Opened '+r.file+' in your image editor. Save it and the preview updates.')}catch(e){toast(e.message,true)}};
  $$('[data-hair]').forEach(b=>b.onclick=()=>{chosen.hair=b.dataset.hair;syncControls();dirty()});
  $('#hatToggle').onchange=e=>{chosen.hat=e.target.checked;dirty()};
  $('#glassesToggle').onchange=e=>{chosen.glasses=e.target.checked;dirty()};
@@ -319,30 +318,22 @@ function setupControls(){
  const colorPanel=$('#colorFields'); colorPanel.innerHTML=Object.entries(PALETTE_LABELS).map(([k,label])=>`<div class="color-field"><label for="color_${k}">${label}</label><span class="hex-label"></span><input id="color_${k}" type="color" data-color="${k}" /></div>`).join('');
  $$('.color-field input').forEach(el=>el.addEventListener('input',e=>{chosen.colors[e.target.dataset.color]=e.target.value;e.target.closest('.color-field').querySelector('.hex-label').textContent=e.target.value.toUpperCase();dirty()}));
 }
-// ---- Wardrobe: bottoms and prints. The trench and the dress come with their own legs; the T-shirt, tank top,
-// shorts and jeans are unwrapped front | back, so a picture (a print) wraps onto them like a face.
-const ownLegs=o=>o==='dress'||o==='trench';
-const PRINT_GARMENTS={tee:['tshirt','tank'],bottom:['shorts','jeans']};
-const TEMPLATES=[['outfit_tshirt','T-shirt'],['outfit_tank','Tank top'],['legs_shorts','Shorts'],['legs_jeans','Jeans']];
-function printWorn(slot){return slot==='tee'?PRINT_GARMENTS.tee.includes(chosen.outfit):!ownLegs(chosen.outfit)&&PRINT_GARMENTS.bottom.includes(chosen.bottoms)}
-function syncWardrobe(){
- const own=ownLegs(chosen.outfit);
- $$('[data-bottoms]').forEach(x=>{x.classList.toggle('active',!own&&x.dataset.bottoms===(chosen.bottoms||'trousers'));x.disabled=own});
- $('#bottomsHint').textContent=own?`The ${chosen.outfit==='dress'?'dress':'trench coat'} comes with its own legs.`:'';
- const prints=catalog?.prints||[];
- $$('[data-print]').forEach(el=>{const slot=el.dataset.print;el.innerHTML=prints.map(p=>`<option value="${safeText(p.id)}">${safeText(p.name)}</option>`).join('');el.value=chosen.prints?.[slot]||'cotton';$('#printRow_'+slot).classList.toggle('hidden',!printWorn(slot))});
- $('#printHint').textContent=printWorn('tee')||printWorn('bottom')?'':'Prints go on the T-shirt, tank top, shorts and jeans.';
+// ---- Outfit wraps: the wrap body (body_wrap_m / _f) dressed by one picture, a turnaround sheet of the body
+// from the front, its left, the back and its right. Transparent pixels show the character's skin.
+function renderWraps(){
+ const wraps=catalog?.wraps||[];const on=chosen.outfit==='wrap';
+ $('#wrapGrid').innerHTML=wraps.map(w=>`<button class="wrap-tile ${on&&w.id===chosen.wrap?'active':''}" data-wrap="${safeText(w.id)}" title="${safeText(w.name)}"><img loading="lazy" src="${safeText(w.texture)}" alt=""><span>${safeText(w.name)}</span></button>`).join('');
+ $$('[data-wrap]').forEach(b=>b.onclick=()=>{chosen.outfit='wrap';chosen.wrap=b.dataset.wrap;syncControls();dirty()});
+ const custom=wraps.find(w=>w.id===chosen.wrap&&!w.builtin);$('#openWrap').classList.toggle('hidden',!(on&&custom));
 }
-function showPrintImport(){
- const custom=(catalog?.prints||[]).filter(p=>!p.builtin);
- const modes=[['both','Front and back','The picture on the front and the same on the back.'],['front','Front only','The picture on the front; the rest takes its border colour.'],['wrap','Whole wrap','Drawn on a template: left half the front, right half the back.'],['pattern','Repeating pattern','Tiled all over, about 8 times across.']];
- openModal(heading('WARDROBE / PRINTS','Import a print','A picture wrapped onto the T-shirt, tank top, shorts or jeans, the way a face wraps the head. The garment colour tints it; importing sets that colour to white so the picture shows true.')+`<div class="modal-body"><div class="print-dialog"><div><label class="file-drop"><span style="font-size:31px">⊕</span><strong>Choose a picture</strong><small>PNG, JPG or WebP · up to 25 MB</small><input type="file" id="printFile" accept="image/png,image/jpeg,image/webp"></label><div class="print-preview" id="printPreview" style="margin-top:10px">No picture yet</div></div><div><label class="form-field">PRINT NAME <input id="printName" maxlength="60" value="My print"></label><div class="form-field">HOW IT GOES ON</div><div class="print-modes">${modes.map(([v,t,d],i)=>`<label><input type="radio" name="printMode" value="${v}" ${i===0?'checked':''}><span><strong>${t}</strong><small>${d}</small></span></label>`).join('')}</div><label class="form-field" style="margin-top:10px">USE IT FOR <select id="printSlot"><option value="tee">Top: T-shirt / tank top</option><option value="bottom">Bottom: shorts / jeans</option></select></label><div class="template-links">Templates (front | back): ${TEMPLATES.map(([id,l])=>`<a href="/textures/print_template_${id}.png" download target="_blank">${l}</a>`).join('')}</div></div></div>${custom.length?`<div class="form-field" style="margin-top:16px">YOUR PRINTS</div><div class="print-library">${custom.map(p=>`<div class="print-card"><img src="${safeText(p.texture)}" alt=""><span>${safeText(p.name)}</span><button data-del-print="${safeText(p.id)}" title="Delete print">×</button></div>`).join('')}</div>`:''}<div class="dialog-actions"><button class="btn btn-ghost" id="printCancel">Cancel</button><button class="btn btn-accent" id="printImport" disabled>Import print ↗</button></div></div>`);
+function showWrapImport(){
+ const custom=(catalog?.wraps||[]).filter(w=>!w.builtin);
+ openModal(heading('WARDROBE / OUTFIT WRAPS','Import an outfit wrap','One picture dresses the whole body, wrapped all the way round like a face texture. The sheet is a turnaround, 2 : 1 (4096 × 2048): the body from the front, its left side, the back and its right side. Paint over a template; leave skin transparent and it takes the character\'s skin colour.')+`<div class="modal-body wrap-dialog"><label class="file-drop"><span style="font-size:31px">⊕</span><strong>Choose a wrap picture</strong><small>PNG (with transparency for skin), JPG or WebP · up to 40 MB</small><input type="file" id="wrapFile" accept="image/png,image/jpeg,image/webp"></label><div class="wrap-preview" id="wrapPreview">No picture yet</div><label class="form-field" style="margin-top:14px">WRAP NAME <input id="wrapName" maxlength="60" value="My outfit"></label><div class="template-links">Templates: <a href="/textures/wrap_template_body_wrap_m.png" download target="_blank">Masculine body</a><a href="/textures/wrap_template_body_wrap_f.png" download target="_blank">Feminine body</a> · Built-in wraps to start from: ${(catalog?.wraps||[]).filter(w=>w.builtin).map(w=>`<a href="${safeText(w.texture)}" download target="_blank">${safeText(w.name)}</a>`).join('')}</div>${custom.length?`<div class="form-field" style="margin-top:16px">YOUR WRAPS</div><div class="wrap-library">${custom.map(w=>`<div class="wrap-card"><img src="${safeText(w.texture)}" alt=""><span>${safeText(w.name)}</span><button data-del-wrap="${safeText(w.id)}" title="Delete wrap">×</button></div>`).join('')}</div>`:''}<div class="dialog-actions"><button class="btn btn-ghost" id="wrapCancel">Cancel</button><button class="btn btn-accent" id="wrapImport" disabled>Import wrap ↗</button></div></div>`);
  let data=null;
- $('#printSlot').value=printWorn('bottom')&&!printWorn('tee')?'bottom':'tee';
- $('#printFile').onchange=e=>{const f=e.target.files[0];if(!f)return;if(f.size>25*1024*1024)return toast('That picture is over 25 MB.',true);const r=new FileReader();r.onload=()=>{data=r.result;const pv=$('#printPreview');pv.style.backgroundImage=`url("${data}")`;pv.textContent='';$('#printName').value=f.name.replace(/\.[^.]+$/,'').slice(0,60)||'My print';$('#printImport').disabled=false};r.readAsDataURL(f)};
- $('#printCancel').onclick=closeModal;
- $$('[data-del-print]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this print? Characters using it go back to plain cotton.'))return;try{const r=await api('/api/prints/'+encodeURIComponent(b.dataset.delPrint),{method:'DELETE'});catalog.prints=r.prints;for(const k of ['tee','bottom'])if(chosen.prints?.[k]===b.dataset.delPrint)chosen.prints[k]='cotton';syncControls();dirty();showPrintImport()}catch(err){toast(err.message,true)}});
- $('#printImport').onclick=async()=>{const btn=$('#printImport');btn.disabled=true;btn.textContent='Importing…';try{const slot=$('#printSlot').value;const r=await api('/api/prints',{method:'POST',body:JSON.stringify({name:$('#printName').value,mode:document.querySelector('[name=printMode]:checked').value,image:data})});catalog.prints=r.prints;chosen.prints={...chosen.prints,[slot]:r.print.id};chosen.colors[slot]='#ffffff';if(slot==='tee'&&!PRINT_GARMENTS.tee.includes(chosen.outfit))chosen.outfit='tshirt';if(slot==='bottom'&&!printWorn('bottom')){if(ownLegs(chosen.outfit))chosen.outfit='tshirt';chosen.bottoms='shorts'}syncControls();dirty();closeModal();toast(`Print “${r.print.name}” added and put on.`)}catch(err){toast(err.message,true);btn.disabled=false;btn.textContent='Import print ↗'}};
+ $('#wrapFile').onchange=e=>{const f=e.target.files[0];if(!f)return;if(f.size>40*1024*1024)return toast('That picture is over 40 MB.',true);const r=new FileReader();r.onload=()=>{data=r.result;const pv=$('#wrapPreview');pv.style.backgroundImage=`url("${data}")`;pv.textContent='';$('#wrapName').value=f.name.replace(/\.[^.]+$/,'').slice(0,60)||'My outfit';$('#wrapImport').disabled=false};r.readAsDataURL(f)};
+ $('#wrapCancel').onclick=closeModal;
+ $$('[data-del-wrap]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this wrap? Characters wearing it go back to the T-shirt & shorts wrap.'))return;try{const r=await api('/api/wraps/'+encodeURIComponent(b.dataset.delWrap),{method:'DELETE'});catalog.wraps=r.wraps;if(chosen.wrap===b.dataset.delWrap)chosen.wrap='tee_shorts';syncControls();dirty();showWrapImport()}catch(err){toast(err.message,true)}});
+ $('#wrapImport').onclick=async()=>{const btn=$('#wrapImport');btn.disabled=true;btn.textContent='Importing…';try{const r=await api('/api/wraps',{method:'POST',body:JSON.stringify({name:$('#wrapName').value,image:data})});catalog.wraps=r.wraps;chosen.outfit='wrap';chosen.wrap=r.wrap.id;syncControls();dirty();closeModal();toast(r.note||`Wrap “${r.wrap.name}” added and put on.`,Boolean(r.note))}catch(err){toast(err.message,true);btn.disabled=false;btn.textContent='Import wrap ↗'}};
 }
 function selectClip(name){chosen.animation=name;$('#animationSelect').value=name;$$('[data-clip]').forEach(b=>b.classList.toggle('active',b.dataset.clip===name));viewer?.play(name);setStatus(`ANIMATION: ${name.toUpperCase()}`)}
 function setupClips(){const list=catalog.animations;$('#animationSelect').innerHTML=list.map(k=>`<option value="${safeText(k)}">${safeText(k.replaceAll('_',' '))}</option>`).join('');$('#motionList').innerHTML=list.map(k=>`<button data-clip="${safeText(k)}"><span>${safeText(k.replaceAll('_',' '))}</span><span>▶ PREVIEW</span></button>`).join('');$$('[data-clip]').forEach(el=>el.onclick=()=>selectClip(el.dataset.clip))}
@@ -374,6 +365,6 @@ class FaceLab{
  up(){this.drag=null}
  destroy(){this.resizeObserver.disconnect();this.canvas.removeEventListener('pointerdown',this.boundDown);this.canvas.removeEventListener('pointermove',this.boundMove);this.canvas.removeEventListener('pointerup',this.boundUp);this.canvas.removeEventListener('pointercancel',this.boundUp)}
 }
-async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.9.0');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
+async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.9.1');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
 async function init(){setupControls();try{catalog=await api('/api/catalog');chosen=structuredClone(catalog.starter||fallback);setupClips();syncControls();$('#faceFoot').textContent=`${catalog.faces.length} UV textures available`;$('#engineState').textContent=catalog.blender_available?'BLENDER READY':'BLENDER NOT DETECTED';setStatus(catalog.model_available?'SOURCE MODEL READY — NOBODY CAME / character_kit':'BASE MODEL NOT BUILT');if(catalog.model_available)initViewer();else {$('#viewerHint').textContent='Base model missing. Follow README to rebuild human.glb.';toast('Source human.glb is missing',true)} }catch(e){console.error(e);toast('Could not load character data: '+e.message,true);$('#viewerHint').textContent='Unable to connect to character pipeline.'}}
 init();

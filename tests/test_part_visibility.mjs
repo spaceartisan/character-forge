@@ -32,8 +32,8 @@ function isEffectivelyVisible(mesh){
   return visible;
 }
 
-test('all 16 character parts can be found by exported node name',()=>{
- assert.equal(CHARACTER_PARTS.length,16);
+test('all 14 character parts can be found by exported node name',()=>{
+ assert.equal(CHARACTER_PARTS.length,14);
  assert.equal(parts.size,CHARACTER_PARTS.length);
  for(const part of CHARACTER_PARTS)assert.ok(parts.has(part),part);
 });
@@ -64,24 +64,15 @@ test('outfit toggles retain a visible body and legs',()=>{
  for(const outfit of OUTFITS)for(const body of ['m','f']){
   const selected=desiredCharacterParts({body,outfit,hair:'short',hat:false,glasses:false});
   assert.ok(selected.has(body==='f'?'person_f':'person_m'));
-  assert.equal(applyCharacterParts(parts,{body,outfit,hair:'short',hat:false,glasses:false}).visible.length,outfit==='dress'?3:4);
+  assert.equal(applyCharacterParts(parts,{body,outfit,hair:'short',hat:false,glasses:false}).visible.length,outfit==='dress'||outfit==='wrap'?3:4);
  }
 });
-test('bottoms: trousers, shorts or jeans under anything but the trench and the dress',()=>{
- const legs={trousers:'legs_m',shorts:'legs_shorts',jeans:'legs_jeans'};
- for(const outfit of OUTFITS)for(const [bottoms,part] of Object.entries(legs)){
-  const sel=desiredCharacterParts({body:'m',outfit,bottoms,hair:'none',hat:false,glasses:false});
-  const worn=['legs_m','legs_coat','legs_shorts','legs_jeans','outfit_dress'].filter(p=>sel.has(p)&&p.startsWith('legs'));
-  if(outfit==='dress')assert.deepEqual(worn,[],outfit);
-  else if(outfit==='trench')assert.deepEqual(worn,['legs_coat'],outfit+' '+bottoms);
-  else assert.deepEqual(worn,[part],outfit+' '+bottoms);
+test('wrap outfit shows the wrap body for the body type and no legs',()=>{
+ for(const body of ['m','f']){
+  const info=applyCharacterParts(parts,{body,outfit:'wrap',hair:'none',hat:false,glasses:false});
+  assert.deepEqual(info.visible.sort(),['body_wrap_'+body,'person_'+body]);
+  for(const id of ['legs_m','legs_coat','outfit_suit','body_wrap_'+(body==='m'?'f':'m')])assert.equal(parts.get(id).visible,false,id);
  }
- assert.ok(desiredCharacterParts({body:'m',outfit:'tshirt',hair:'none'}).has('legs_m'),'no bottoms given: trousers');
-});
-test('T-shirt and shorts show their own meshes and nothing else',()=>{
- const info=applyCharacterParts(parts,{body:'f',outfit:'tshirt',bottoms:'shorts',hair:'none',hat:false,glasses:false});
- assert.deepEqual(info.visible.sort(),['legs_shorts','outfit_tshirt','person_f']);
- for(const id of ['outfit_tank','legs_jeans','legs_m','outfit_shirt'])assert.equal(parts.get(id).visible,false,id);
 });
 test('missing mandatory groups fails loudly instead of reporting model loaded',()=>{
  const copy=new Map(parts);copy.delete('person_m');

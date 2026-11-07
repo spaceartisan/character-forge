@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { collectCharacterParts, applyCharacterParts } from './character-parts.mjs';
-import { PartShape, ShapeEditor } from './shape.js?v=2.9.0';
+import { PartShape, ShapeEditor } from './shape.js?v=2.9.1';
 
 export async function startViewer(stage, src, rules) {
   const scene = new THREE.Scene();
@@ -127,9 +127,33 @@ export async function startViewer(stage, src, rules) {
     if (tex === '@face') return faceOverride || '/textures/face_' + encodeURIComponent(cfg.face) + '.png';
     if (tex === '@top') tex = cfg.fabric?.top || 'cloth';
     if (tex === '@pants') tex = cfg.fabric?.pants || 'cloth';
-    if (tex === '@tee' || tex === '@bottom') return '/textures/print_' + encodeURIComponent(cfg.prints?.[tex.slice(1)] || 'cotton') + '.png';
     return '/materials/' + tex + '.png';
   }
+
+  // Outfit wraps: the picture laid over the character's skin colour (transparent pixels are skin), the
+  // same composite server.py makes for the export. Cached per wrap, skin colour and file version.
+  const wrapCache = new Map();
+  const lin = c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+  const srgb = c => c <= .0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - .055;
+  function skinUnderWrap(hex) {
+    const t = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+    return 'rgb(' + t.map((a, i) => Math.round(255 * srgb(lin(a) * lin(rules.wrap_skin_mean[i])))).join(',') + ')';
+  }
+  function wrapTexture(id, skin, version) {
+    const key = id + '|' + skin + '|' + version;
+    if (!wrapCache.has(key)) {
+      if (wrapCache.size > 8) { const [k, p] = wrapCache.entries().next().value; wrapCache.delete(k); p.then(t => t.dispose()); }
+      wrapCache.set(key, new THREE.ImageLoader().loadAsync('/textures/wrap_' + encodeURIComponent(id) + '.png?v=' + version).then(img => {
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d'); g.fillStyle = skinUnderWrap(skin); g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0);
+        const t = new THREE.CanvasTexture(c);
+        t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+        return t;
+      }));
+    }
+    return wrapCache.get(key);
+  }
+  let wrapVersion = 0;
 
   function update(cfg) {
     current = cfg;
@@ -146,8 +170,8 @@ export async function startViewer(stage, src, rules) {
         const slot = mat.name.split('.')[0];
         const rule = surfaceRule(o.userData.part, slot);
         if (!rule) continue;
-        const isFace = rule.tex === '@face';
-        const tint = isFace ? '#ffffff' : (cfg.colors[rule.color || slot] || '#ffffff');
+        const isFace = rule.tex === '@face', isWrap = rule.tex === '@wrap';
+        const tint = isFace || isWrap ? '#ffffff' : (cfg.colors[rule.color || slot] || '#ffffff');
         mat.color.set(tint);
         mat.roughness = rule.rough;
         mat.metalness = 0;
@@ -167,10 +191,11 @@ export async function startViewer(stage, src, rules) {
           mat.needsUpdate = true;
           continue;
         }
-        const url = textureFor(rule.tex, cfg);
+        const wrapId = cfg.wrap || 'tee_shorts';
+        const url = isWrap ? 'wrap:' + wrapId + '|' + cfg.colors.skin + '|' + wrapVersion : textureFor(rule.tex, cfg);
         if (mat.userData.url !== url) {
           mat.userData.url = url;
-          textures.get(url, isFace).then(t => {
+          (isWrap ? wrapTexture(wrapId, cfg.colors.skin || '#c9805e', wrapVersion) : textures.get(url, isFace)).then(t => {
             if (mat.userData.url !== url) return; // changed again while loading
             mat.map = t;
             if (mat.userData.flat) mat.emissiveMap = t;
@@ -233,9 +258,20 @@ export async function startViewer(stage, src, rules) {
     if (current) update(current);
   }
 
-  // Reload the face texture whenever its PNG changes on disk, so painting in an
+  // Reload the face texture (and an outfit wrap) whenever its PNG changes on disk, so painting in an
   // external editor shows up here on save.
-  let faceStamp = { face: null, stamp: null };
+  let faceStamp = { face: null, stamp: null }, wrapStamp = { wrap: null, stamp: null };
+  async function checkWrap() {
+    if (!current || current.outfit !== 'wrap' || document.hidden) return;
+    const wrap = current.wrap;
+    try {
+      const r = await fetch('/textures/wrap_' + encodeURIComponent(wrap) + '.png', { method: 'HEAD', cache: 'no-store' });
+      const stamp = r.headers.get('last-modified') + '|' + r.headers.get('etag');
+      if (wrapStamp.wrap === wrap && wrapStamp.stamp !== stamp && current.wrap === wrap) { wrapVersion++; update(current); }
+      wrapStamp = { wrap, stamp };
+    } catch { /* server gone; try again next tick */ }
+  }
+  setInterval(checkWrap, 1500);
   async function checkFace() {
     if (!current || document.hidden || faceOverride || paintTexture) return;
     const face = current.face, url = '/textures/face_' + encodeURIComponent(face) + '.png';

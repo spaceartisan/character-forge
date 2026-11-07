@@ -49,12 +49,8 @@
    "tex": "@face",
    "rough": 0.7
   },
-  "tee": {
-   "tex": "@tee",
-   "rough": 0.85
-  },
-  "bottom": {
-   "tex": "@bottom",
+  "wrap": {
+   "tex": "@wrap",
    "rough": 0.85
   }
  },
@@ -114,5 +110,10 @@
   "cower",
   "cuffed"
  ],
- "_prints": "Character Forge additions: 'tee' (T-shirt, tank top) and 'bottom' (shorts, jeans) are print surfaces. Their texture is the character's chosen print (assets/textures/print_<id>.png), unwrapped front | back, tinted by the surface colour."
+ "wrap_skin_mean": [
+  0.889,
+  0.793,
+  0.719
+ ],
+ "_wrap": "Character Forge addition: the wrap bodies (body_wrap_m/f) have one surface, 'wrap', dressed by the character's outfit wrap (assets/textures/wrap_<id>.png, a front / left / back / right turnaround sheet). Transparent pixels are skin: the wrap is laid over the skin colour times wrap_skin_mean (the average of materials/skin.png)."
 }
