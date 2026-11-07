@@ -61,6 +61,7 @@ A wrap is a **4096 × 2048** turnaround sheet in four panels, left to right: **f
 
 - *T-shirt & shorts* and *Tank top & jeans* are built in.
 - **Import wrap** takes a PNG, JPEG or WebP (2:1 is best; other shapes are stretched with a warning) and saves it as `assets/textures/wrap_<id>.png`, listed in `data/wraps.json`. The dialog links the templates (`assets/textures/wrap_template_body_wrap_<m|f>.png`, the silhouettes on the panels) and the built-in wraps as starting points, and deletes imported wraps.
+- **A front view of an outfit** works too: pick *A front view of an outfit* in the import dialog (it's picked for you when the picture isn't 2:1) and say which body the figure has. The picture should show one figure, front on, on a plain background, with the arms a little away from the body, like a clothing render on a mannequin. `character_kit/wraps/wrap_from_front.py` measures the figure (floor, crotch, base of the neck, each arm), lays the front onto the body, carries the edges round the sides, makes the back from a smoothed copy of the front (stripes and logos left off) and turns the bare mannequin into skin. It takes about a minute. The same script runs from the command line: `python character_kit/wraps/wrap_from_front.py picture.png out.png --body m --debug marks.png`.
 - **Open in editor** opens the selected imported wrap in your image editor; the viewer reloads it when you save.
 
 The export composites the wrap over the skin colour and embeds it like the face texture.

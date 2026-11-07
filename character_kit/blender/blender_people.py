@@ -964,6 +964,8 @@ body_wrap(b, "body_wrap_m", False)
 body_wrap(b, "body_wrap_f", True)
 TEX = os.path.join(OUT, "..", "textures")
 write_templates(b.layouts, TEX)
+# The layouts (per-triangle UV, 3D position, piece tag), for tools that paint wraps outside Blender
+np.savez_compressed(os.path.join(OUT, "wrap_layouts.npz"), **{f"{n}_{k}": (v.astype(np.float32) if k != "tag" else np.asarray(v)) for n in ("body_wrap_m", "body_wrap_f") for k, v in b.layouts[n].items()})
 bake_wraps([b.layouts["body_wrap_m"], b.layouts["body_wrap_f"]], TEX, {"tee_shorts": look_tee_shorts, "tank_jeans": look_tank_jeans})
 build_anims(arm)
 export(os.path.join(OUT, "human.glb"), colors=True)

@@ -37,6 +37,8 @@ for d in (REF_DIR, TEXTURES, MODELS, DATA, EXPORTS):
 
 sys.path.insert(0, str(KIT / 'faces'))
 import faces_from_refs as face_pipeline  # noqa: E402  The original warp/fill engine.
+sys.path.insert(0, str(KIT / 'wraps'))
+import wrap_from_front  # noqa: E402  Front-view outfit picture -> full wrap.
 
 app = FastAPI(title='Character Forge', version='1.0.0')
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
@@ -301,6 +303,8 @@ def wrap_over_skin(wid,skin_hex):
 class WrapWrite(BaseModel):
     name:str
     image:str                              # data URL (PNG, JPEG or WebP)
+    kind:str='sheet'                       # 'sheet': a wrap as drawn; 'front': a front view of an outfit, to convert
+    body:str='m'                           # with 'front': the body the picture shows
 
 @app.post('/api/wraps')
 def add_wrap(body:WrapWrite):
@@ -314,9 +318,15 @@ def add_wrap(body:WrapWrite):
     except Exception: raise HTTPException(400,'That file could not be read as an image')
     if img.width*img.height>80_000_000: raise HTTPException(400,'Image too large')
     note=None
-    if abs(img.width/img.height-2)>.05: note=f'The picture is {img.width} x {img.height}; wraps are 2:1, so it was stretched to fit.'
     wid='w'+uuid.uuid4().hex[:10]
-    img.convert('RGBA').resize(WRAP_SIZE,Image.LANCZOS).save(TEXTURES/f'wrap_{wid}.png',optimize=True)
+    if body.kind=='front':
+        if body.body not in ('m','f'): raise HTTPException(400,'body must be m or f')
+        try: wrap=wrap_from_front.convert(img,body.body)
+        except Exception as e: raise HTTPException(400,f'Could not find a figure to convert in that picture ({e.__class__.__name__}). It needs one figure, front on, on a plain background.')
+        wrap.save(TEXTURES/f'wrap_{wid}.png',optimize=True)
+    else:
+        if abs(img.width/img.height-2)>.05: note=f'The picture is {img.width} x {img.height}; wraps are 2:1, so it was stretched to fit.'
+        img.convert('RGBA').resize(WRAP_SIZE,Image.LANCZOS).save(TEXTURES/f'wrap_{wid}.png',optimize=True)
     item={'id':wid,'name':(body.name.strip() or 'Outfit wrap')[:60],'created':time.strftime('%Y-%m-%d %H:%M')}
     wraps=read_json(WRAPS_FILE,[]); wraps.insert(0,item); write_json(WRAPS_FILE,wraps)
     return {'wrap':{**item,'texture':f'/textures/wrap_{wid}.png'},'wraps':all_wraps(),'note':note}

@@ -21,7 +21,8 @@ for t in textures:
 for name in ('wrap_tee_shorts','wrap_tank_jeans','wrap_template_body_wrap_m','wrap_template_body_wrap_f'):
     with Image.open(r/f'assets/textures/{name}.png') as im:
         assert im.size==(4096,2048),f'Wrong wrap size: {name}'
-for path in ['server.py','static/index.html','static/app.js','static/viewer.js',
+assert (r/'assets/models/wrap_layouts.npz').is_file(), 'Missing wrap layouts (rebuild the models)'
+for path in ['character_kit/wraps/wrap_from_front.py','server.py','static/index.html','static/app.js','static/viewer.js',
              'character_kit/blender/blender_people.py','character_kit/blender/blender_rig.py',
              'character_kit/blender/export_character.py']:
     assert (r/path).is_file(),f'Missing {path}'

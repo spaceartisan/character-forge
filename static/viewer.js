@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { collectCharacterParts, applyCharacterParts } from './character-parts.mjs';
-import { PartShape, ShapeEditor } from './shape.js?v=2.9.1';
+import { PartShape, ShapeEditor } from './shape.js?v=2.9.2';
 
 export async function startViewer(stage, src, rules) {
   const scene = new THREE.Scene();

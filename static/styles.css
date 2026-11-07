@@ -106,3 +106,8 @@
 .wrap-card img{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;background:#b98a6e}
 .wrap-card span{display:block;padding:4px 6px;font-size:11px;color:#c9d6cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wrap-card button{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:0;background:#000a;color:#fff;cursor:pointer}
+
+.wrap-kind{display:grid;gap:8px;font-size:12px;color:#c9d8d3}
+.wrap-kind label{display:block;cursor:pointer}
+.wrap-kind small{display:block;margin-left:22px;color:#8fa59e;font-size:11px}
+.wrap-preview.portrait{aspect-ratio:3/4;max-width:220px;background-size:contain}
