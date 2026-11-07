@@ -43,6 +43,7 @@ let mapState=null;
 const SOURCE_LABEL={front:'Front',side:'Side',both:'Both',fill:'Fill'};
 const SOURCE_HINT={front:'Front view only',side:'Profile only',both:'Blend front and profile',fill:'Neither: smooth fill from around it'};
 async function openMapPanel(){
+ showInspector();
  if(paintFace&&!closePaintPanel())return;
  closeShapePanel();
  const face=chosen.face;
@@ -98,10 +99,11 @@ let painter=null,paintFace=null,paintMod=null;
 const hex=c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join('');
 const unhex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 async function openPaintPanel(){
+ showInspector();
  if(!viewer)return toast('The 3D view is not ready',true);
  closeMapPanel();closeShapePanel();
  try{
-  paintMod=paintMod||await import('/static/painter.js?v=2.6.0');
+  paintMod=paintMod||await import('/static/painter.js?v=2.7.0');
   if(!painter)painter=new paintMod.FacePainter(viewer,$('#stage'),{onChange:renderPaintPanel,onPick:()=>{if(painter.tool==='pick')painter.tool='paint'}});
   paintFace=chosen.face;setStatus('LOADING FACE '+paintFace.toUpperCase()+' FOR TOUCH-UPS…');
   await painter.start(paintFace);
@@ -164,6 +166,7 @@ async function clearPaint(){
 let shapeEd=null;
 const PART_LABEL={person_m:'Body (masculine)',person_f:'Body (feminine)',legs_m:'Legs',legs_coat:'Legs (coat)',outfit_suit:'Suit',outfit_trench:'Trench coat',outfit_shirt:'Shirt',outfit_dress:'Dress',hair_short:'Short hair',hair_long:'Long hair',hat:'Hat',glasses:'Glasses'};
 function openShapePanel(){
+ showInspector();
  if(!viewer)return toast('The 3D view is not ready',true);
  if(paintFace&&!closePaintPanel())return;
  closeMapPanel();
@@ -253,8 +256,28 @@ async function deleteBaseShape(id){
  try{const r=await api('/api/shapes/'+encodeURIComponent(id),{method:'DELETE'});catalog.shapes=r.shapes;if(chosen.shape_base===id)delete chosen.shape_base;renderBaseShape();renderShapePanel()}
  catch(e){toast(e.message,true)}
 }
+// Collapsible side panels (left rail toggles). Remembered per browser; the viewport takes the space.
+const PANEL_INFO={left:{sel:'.library-panel',name:'face library'},right:{sel:'.inspector-panel',name:'Customize panel'}};
+function panelOpen(side){return !$('#app').classList.contains('hide-'+side)}
+function setPanel(side,open){
+ $('#app').classList.toggle('hide-'+side,!open);
+ const b=$(side==='left'?'#toggleLeft':'#toggleRight');
+ b.classList.toggle('selected',open);b.setAttribute('aria-pressed',String(open));
+ b.title=(open?'Hide the ':'Show the ')+PANEL_INFO[side].name;
+ try{localStorage.setItem('forge.panel.'+side,open?'1':'0')}catch{}
+}
+function setupPanels(){
+ for(const side of ['left','right']){
+  let open=true;try{open=localStorage.getItem('forge.panel.'+side)!=='0'}catch{}
+  setPanel(side,open);
+  $(side==='left'?'#toggleLeft':'#toggleRight').onclick=()=>setPanel(side,!panelOpen(side));
+ }
+}
+// The head-mode tools dock in the right panel, so opening one shows it.
+function showInspector(){if(!panelOpen('right'))setPanel('right',true)}
 function setTab(t){activeTab=t;$$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));$$('.tab-page').forEach(x=>x.classList.toggle('active',x.dataset.page===t))}
 function setupControls(){
+ setupPanels();
  $$('.filter').forEach(b=>b.onclick=()=>{activeFaceFilter=b.dataset.filter;$$('.filter').forEach(x=>x.classList.toggle('active',x===b));renderFaceGrid()});
  $('#faceSearch').oninput=renderFaceGrid;
  $$('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
@@ -285,7 +308,7 @@ function setupControls(){
  $('#exportTop').onclick=showExport;$('#exportBottom').onclick=showExport;
  $('#saveTop').onclick=savePreset;$('#savePreset').onclick=savePreset;
  $('#addFace').onclick=showFaceLab;$('#navFaces').onclick=showFaceLab;
- $('#navStudio').onclick=()=>{closeModal();setTab('appearance')};
+ $('#navStudio').onclick=()=>{closeModal();showInspector();setTab('appearance')};
  $('#navLibrary').onclick=showSaved;$('#navHelp').onclick=showHelp;
  $('#modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeModal()});
  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
@@ -322,6 +345,6 @@ class FaceLab{
  up(){this.drag=null}
  destroy(){this.resizeObserver.disconnect();this.canvas.removeEventListener('pointerdown',this.boundDown);this.canvas.removeEventListener('pointermove',this.boundMove);this.canvas.removeEventListener('pointerup',this.boundUp);this.canvas.removeEventListener('pointercancel',this.boundUp)}
 }
-async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.6.0');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
+async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.7.0');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
 async function init(){setupControls();try{catalog=await api('/api/catalog');chosen=structuredClone(catalog.starter||fallback);setupClips();syncControls();$('#faceFoot').textContent=`${catalog.faces.length} UV textures available`;$('#engineState').textContent=catalog.blender_available?'BLENDER READY':'BLENDER NOT DETECTED';setStatus(catalog.model_available?'SOURCE MODEL READY — NOBODY CAME / character_kit':'BASE MODEL NOT BUILT');if(catalog.model_available)initViewer();else {$('#viewerHint').textContent='Base model missing. Follow README to rebuild human.glb.';toast('Source human.glb is missing',true)} }catch(e){console.error(e);toast('Could not load character data: '+e.message,true);$('#viewerHint').textContent='Unable to connect to character pipeline.'}}
 init();

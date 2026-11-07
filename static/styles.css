@@ -77,3 +77,11 @@
 .shape-list strong{font-size:11px;color:#e3ece8}
 .shape-list small{font-size:9px;color:#7d8f97;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .link-btn.danger{color:#e59a8c}
+
+/* Collapsible side panels */
+#app.hide-left .library-panel,#app.hide-right .inspector-panel{display:none}
+.rail-panels{margin-top:26px;padding-top:18px;border-top:1px solid #1f2931;gap:10px}
+.rail-label{font-size:7px;letter-spacing:.16em;color:var(--faint)}
+.panel-toggle svg path,.panel-toggle svg rect{fill:none;stroke:currentColor;stroke-width:1.6}
+.panel-toggle svg path.fill{fill:currentColor;stroke:none;opacity:.35}
+.panel-toggle.selected svg path.fill{opacity:.9}

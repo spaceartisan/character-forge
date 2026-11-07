@@ -20,6 +20,11 @@
    <button class="rail-button" title="Face Lab" aria-label="Face Lab" id="navFaces"><svg viewBox="0 0 24 24"><path d="M5 6a7 7 0 0 1 14 0v7a7 7 0 0 1-14 0V6Zm3 5h2m4 0h2m-6 5c1.5 1 2.5 1.5 4 0"/></svg></button>
    <button class="rail-button" title="Saved characters" aria-label="Saved characters" id="navLibrary"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg></button>
   </div>
+  <div class="rail-block rail-panels" role="group" aria-label="Panels">
+   <span class="rail-label">PANELS</span>
+   <button class="rail-button panel-toggle selected" id="toggleLeft" data-panel="left" aria-pressed="true" title="Hide the face library" aria-label="Face library panel"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/><path class="fill" d="M4.5 5.5h3.5v13H4.5z"/></svg></button>
+   <button class="rail-button panel-toggle selected" id="toggleRight" data-panel="right" aria-pressed="true" title="Hide the Customize panel" aria-label="Customize panel"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M15 4.5v15"/><path class="fill" d="M16 5.5h3.5v13H16z"/></svg></button>
+  </div>
   <div class="rail-bottom"><button class="rail-button" id="navHelp" title="About this project"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 0 1 4.7 1.4c0 1.6-2.4 2-2.4 3.8m0 3.2v.1"/></svg></button><div class="rail-version">V2.0</div></div>
  </aside>
  <div class="workspace">
@@ -73,6 +78,6 @@
 </div>
 <div id="modalBackdrop" class="modal-backdrop hidden" aria-hidden="true"><div class="modal" id="dialogContent"></div></div>
 <div id="toast" class="toast" role="status"></div>
-<script type="module" src="/static/app.js?v=2.6.0"></script>
+<script type="module" src="/static/app.js?v=2.7.0"></script>
 </body>
 </html>
