@@ -43,13 +43,13 @@ Use **Import a new face**, choose an image, then:
 - Drag the crop corners to isolate the **front of the face**. Drag inside the rectangle to move it around a contact sheet.
 - Click the **Left eye**, **Right eye**, or **Lip center** tool, then click the corresponding point on the reference.
 - Choose the studio backdrop color (white by default, or dark grey for studio photos). Background tolerance controls which colors are removed.
-- Give the result a **new face ID** and click **Generate face texture**. The original `faces_from_refs.py` warp/fill process writes a 512×512 PNG. It appears in the face gallery immediately.
+- Give the result a **new face ID** and click **Generate face texture**. The original `faces_from_refs.py` warp/fill process writes a 1024×1024 PNG that wraps round the whole head (front view only; built-in faces also use a profile view). It appears in the face gallery immediately.
 
 The original painted eyes and expressions are 2D face textures projected onto an existing 3D head. This does not automatically reconstruct a unique head mesh or a fully sculpted likeness from the reference. The original source kit notes that the common head shape works better than its earlier per-person head deformations.
 
 ### Exported model contents
 
-`Rigged GLB` creates one character containing **one** appropriate body, one leg mesh, one outfit, and the chosen accessories. It retains the **shared skeleton, skin weights, UVs, vertex colors, embedded 512×512 face texture, and 13 animation actions**. The resulting file imports through Godot's glTF importer or Blender's glTF importer. The `Godot-ready package` additionally includes `character.json`, a separate editable face PNG, and instructions.
+`Rigged GLB` creates one character containing **one** appropriate body, one leg mesh, one outfit, and the chosen accessories. It retains the **shared skeleton, skin weights, UVs, vertex colors, embedded 1024×1024 face texture, and 13 animation actions**. The resulting file imports through Godot's glTF importer or Blender's glTF importer. The `Godot-ready package` additionally includes `character.json`, a separate editable face PNG, and instructions.
 
 The source `human.glb` is included in this archive and was generated from the included Blender script. Use the **? → Rebuild base geometry** action in the web UI if you edit the procedural geometry generator and want a fresh source GLB. You can also run `python character_kit/build.py --models` using the BLENDER environment variable; the standalone build skips Godot import if there's no `project.godot` file.
 
@@ -59,7 +59,7 @@ The source `human.glb` is included in this archive and was generated from the in
 |---|---|
 | `character_kit/` | Original Blender geometry/rig code and painted reference sheets, with small standalone compatibility patches and `blender/export_character.py` added |
 | `assets/models/human.glb` | Prebuilt original character kit containing all mesh variants and animations |
-| `assets/textures/` | Generated 512×512 face textures used by the preview and Blender exports |
+| `assets/textures/` | Generated 1024×1024 face textures (wrapped round the head) used by the preview and Blender exports |
 | `static/` | Web UI, preview image and Three.js-based 3D viewer |
 | `server.py` | Local FastAPI server, face processing, saved characters, exports and geometry rebuild |
 | `data/characters.json` | Saved characters (populated with four example presets on first launch) |

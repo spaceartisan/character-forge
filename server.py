@@ -118,8 +118,8 @@ def face_meta(name):
         # Custom face: sample a cheek and the hairline. The user can adjust both in the editor.
         im=Image.open(filename).convert('RGB')
         col=lambda p:'#%02x%02x%02x'%p
-        skin = skin or col(im.getpixel((150,300)))
-        hair = hair or col(im.getpixel((256,30)))
+        skin = skin or col(im.getpixel(face_pipeline.CHEEK))
+        hair = hair or col(im.getpixel(face_pipeline.HAIR))
     return {
         'id':name,'name':FACE_NAMES.get(name, name.replace('_',' ').title()),
         'body':'f' if name.startswith('f') and name!='fed' else 'm',
@@ -130,6 +130,28 @@ def face_meta(name):
     }
 
 PRESET_VERSION = 2   # bump to refresh the built-in presets; the user's own characters are kept
+
+def upgrade_face_textures():
+    """Custom faces made before the wrapped 1024 layout: rebake from their saved Face Lab settings, or else
+    move the old 512 front projection into the new layout. The old file is kept as face_<id>.512.bak.png."""
+    custom=read_json(CUSTOM_FILE,{})
+    for path in TEXTURES.glob('face_*.png'):
+        fid=path.stem[5:]
+        if '.' in fid: continue
+        with Image.open(path) as im: size=im.size
+        if size==(face_pipeline.TEX,face_pipeline.TEX): continue
+        backup=path.with_name(f'face_{fid}.512.bak.png')
+        try:
+            shutil.copy2(path,backup)
+            c=custom.get(fid)
+            if c and (REF_DIR/f"{c['source_id']}.png").is_file():
+                back=tuple(int(c['backdrop'][i:i+2],16) for i in (1,3,5))
+                face_pipeline.build(fid,c['source_id'],tuple(c['box']),[tuple(p) for p in c['points']],back,c['tolerance'])
+            else:
+                with Image.open(backup) as old: face_pipeline.legacy_to_new(old).save(path)
+            print(f'upgraded face texture {fid} to the wrapped layout (old copy: {backup.name})')
+        except Exception as ex:
+            print('could not upgrade face texture',fid,ex)
 
 def seed_data():
     seeds=[{'id':f'preset-{i}','preset_version':PRESET_VERSION,**p} for i,p in enumerate(SEEDS)]
@@ -142,6 +164,7 @@ def seed_data():
     if not CUSTOM_FILE.is_file(): write_json(CUSTOM_FILE,{})
     if not SOURCES_FILE.is_file(): write_json(SOURCES_FILE,{})
 seed_data()
+upgrade_face_textures()
 
 @app.get('/')
 def index():

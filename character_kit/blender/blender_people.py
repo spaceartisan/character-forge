@@ -219,7 +219,7 @@ class Build:
 
     def object(self, name, pieces):
         """pieces: dicts of field(s), bounds, step, tris, mat, bones, uv, [skirt_from, ao_with]."""
-        vs, ts, ms, colors, uvs, gs = [], [], [], [], [], []
+        vs, ts, ms, colors, uvs, gs, wraps = [], [], [], [], [], [], []
         base = 0
         mats = []
         for p in pieces:
@@ -228,6 +228,7 @@ class Build:
                 mats.append(p["mat"])
             vs.append(v); ts.append(t + base)
             ms += [mats.index(p["mat"])] * len(t)
+            wraps += [bool(p.get("uv_wrap"))] * len(t)
             colors.append(occlusion(v, [p["f"]] + p.get("ao_with", [])))
             uvs.append(p.get("uv", cloth_uv)(v))
             gs.append(self.weights(v, p["bones"], p.get("skirt_from"), p.get("skirt_over", .35)))
@@ -244,7 +245,18 @@ class Build:
         uv = me.uv_layers.new(name="UV")
         li = np.zeros(len(me.loops), dtype=np.int32)
         me.loops.foreach_get("vertex_index", li)
-        uv.data.foreach_set("uv", all_uv[li].ravel())
+        loop_uv = all_uv[li].copy()
+        if any(wraps):
+            # Triangles straddling a wrapped seam (u = 0 / 1 at the back of the head) would otherwise
+            # stretch across the whole texture. Shift their low side past 1; the texture repeats.
+            start = np.zeros(len(me.polygons), dtype=np.int32)
+            me.polygons.foreach_get("loop_start", start)
+            for p_i in np.nonzero(np.array(wraps))[0]:
+                ids = start[p_i] + np.arange(3)
+                us = loop_uv[ids, 0]
+                if us.max() - us.min() > .5:
+                    loop_uv[ids[us < .5], 0] += 1
+        uv.data.foreach_set("uv", loop_uv.ravel())
         col = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
         ao = np.concatenate(colors)
         col.data.foreach_set("color", np.stack([ao, ao, ao, np.ones_like(ao)], 1).ravel())
@@ -274,13 +286,38 @@ def cloth_uv(v):
     return np.stack([(v[:, 0] + .55 * v[:, 1]) * 4.5, (v[:, 2] + .55 * v[:, 1]) * 4.5], 1)
 
 
+# Face texture layout: 1024 x 1024 px at 2133 px per metre (the old 512 portrait's density), so
+# FACE_K uv units per metre. The face is a straight-on portrait in the middle; everything else is
+# unwrapped around it instead of being clamped to the texture's edge.
+FACE_K = 2133 / 1024
+FACE_Z0 = 1.665                 # height at the texture's centre row
+HEAD_AXIS_Y = .012              # the cranium's and neck's vertical axis (front of the body is -Y)
+FRONT_ANGLE = math.radians(40)  # planar portrait within this angle of straight ahead
+CRANIUM = (1.692, .097, .085)   # centre height, vertical and horizontal radius, for the crown unwrap
+
+
 def face_uv(v):
-    """Straight on from the front, so a face texture reads as a portrait too. See tools/gen_art.py.
-    From the ears back it slides onto a clear row of forehead, so the back of the head isn't a mirrored face."""
-    u = .5 + v[:, 0] / .24
-    front = .5 + (v[:, 2] - 1.665) / .24
-    back = sstep(-.005, .035, v[:, 1])
-    return np.stack([u, np.clip(front + (.707 - front) * back, .03, .98)], 1)
+    """Portrait in the middle, sides and back wrapped round, crown unwrapped over the top.
+
+    Across: within FRONT_ANGLE of straight ahead the projection is planar (x), so a face texture reads
+    as a portrait. Beyond that it goes by angle round the head's axis, reaching u = 0 / 1 at the back
+    of the head; that seam is fixed per triangle in Build.object (uv_wrap) and the texture repeats.
+    Down: planar height, except above the cranium's middle, where it follows the arc over the crown.
+    The old layout clamped the crown, the neck and everything behind the ears to single rows of pixels.
+    """
+    x, y, z = v[:, 0], v[:, 1] - HEAD_AXIS_Y, v[:, 2]
+    rho = np.maximum(np.hypot(x, y), 1e-4)
+    theta = np.arctan2(np.abs(x), -y)                       # 0 straight ahead, pi at the back
+    edge = rho * math.sin(FRONT_ANGLE) * FACE_K             # u offset where the portrait ends
+    reach = (.5 - edge) / np.maximum((math.pi - FRONT_ANGLE) * rho * FACE_K, 1e-6)
+    side = edge + (theta - FRONT_ANGLE) * rho * FACE_K * reach
+    off = np.where(theta <= FRONT_ANGLE, np.abs(x) * FACE_K, side)
+    u = .5 + np.sign(x) * np.minimum(off, .5)
+    zc, rz, rh = CRANIUM
+    above = z > zc
+    lift = np.arctan2((z - zc) / rz, rho / rh)               # elevation over the cranium's middle
+    z_eff = np.where(above, zc + rz * lift, z)
+    return np.stack([u, .5 + (z_eff - FACE_Z0) * FACE_K], 1)
 
 
 # ------------------------------------------------------------------ head
@@ -343,7 +380,7 @@ def hand_field(sg, fem):
 
 def person(b, name, fem):
     hf = head_field(fem)
-    pieces = [dict(f=hf, lo=(-.11, -.14, 1.47), hi=(.11, .125, 1.81), step=.0032, tris=2600, mat="face", bones=["chest", "neck", "head"], uv=face_uv, smooth=2)]
+    pieces = [dict(f=hf, lo=(-.11, -.14, 1.47), hi=(.11, .125, 1.81), step=.0032, tris=2600, mat="face", bones=["chest", "neck", "head"], uv=face_uv, uv_wrap=True, smooth=2)]
     for side, sg in (("L", 1), ("R", -1)):
         x0, x1 = sorted((sg * .19, sg * .3))
         pieces.append(dict(f=hand_field(sg, fem), lo=(x0, -.09, .72), hi=(x1, .04, .95), step=.0028, tris=620, mat="skin", bones=[f"lower_arm.{side}", f"hand.{side}"], smooth=2))

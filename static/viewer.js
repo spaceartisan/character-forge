@@ -247,7 +247,9 @@ class TextureCache {
     const p = this.loader.loadAsync(key).then(t => {
       t.flipY = false; // glTF UV convention
       t.colorSpace = THREE.SRGBColorSpace;
-      t.wrapS = t.wrapT = isFace ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+      // Face maps wrap round the head: u repeats across the seam at the back, v clamps.
+      t.wrapS = THREE.RepeatWrapping;
+      t.wrapT = isFace ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
       t.anisotropy = 8;
       return t;
     });

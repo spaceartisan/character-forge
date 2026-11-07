@@ -91,7 +91,7 @@ def build_material(name, rule, tint_hex):
     bsdf.inputs['Metallic'].default_value = 0.0
     tex = nt.nodes.new('ShaderNodeTexImage')
     tex.image = image_for(rule['tex'])
-    tex.extension = 'EXTEND' if rule['tex'] == '@face' else 'REPEAT'
+    tex.extension = 'REPEAT'   # face maps wrap round the head; the seam at the back relies on it
     if rule['tex'] == '@face':
         nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
     else:

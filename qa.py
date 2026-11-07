@@ -17,7 +17,7 @@ textures=list((r/'assets/textures').glob('face_*.png'))
 assert len(textures)>=17, 'Missing included face textures'
 for t in textures:
     with Image.open(t) as im:
-        assert im.size==(512,512),f'Wrong texture size: {t}'
+        assert im.size==(1024,1024),f'Wrong texture size: {t}'
 for path in ['server.py','static/index.html','static/app.js','static/viewer.js',
              'character_kit/blender/blender_people.py','character_kit/blender/blender_rig.py',
              'character_kit/blender/export_character.py']:

@@ -80,22 +80,25 @@ Always look at them: the numbers won't show you a bad face.
 
 `face_grey.png` (the alien) is still painted in SVG by `../tools/gen_art.py`.
 
-**How a face is made.** Every person shares **one head shape**. The face is a texture projected straight on from the front:
+**How a face is made.** Every person shares **one head shape**, and its face texture wraps all the way round it (`face_uv` in `blender/blender_people.py`):
 
-- 512 px covers 24 cm of head, centred 1.665 m up.
-- The pupils land at (186, 230) and (326, 230), and the lip line at (256, 381).
+- 1024 × 1024 px, 2133 px per metre: the same detail as before, on a sheet four times the size.
+- **The face** (within 40° of straight ahead) is a straight-on portrait in the middle, centred 1.665 m up. The pupils sit at (442, 486) and (582, 486), the lip line at (512, 637).
+- **The sides and back** are unrolled round the head's vertical axis, so ears, temples and the back of the hair get their own pixels. The seam is at the back of the head, at the left and right edges of the texture: paint across it as if the edges join (the texture repeats in u).
+- **The crown** is unrolled over the top, above the forehead, instead of being squeezed into one row.
+- **The neck** carries on down, below the chin.
 
 `faces_from_refs.py` does the following for each face:
 
-1. Takes the front view out of a box on the sheet. The box keeps out the profile, panel frames and shirt.
-2. Warps it so the three points you gave (left pupil, right pupil, lip-line centre) land exactly on those spots.
-3. Clears the background:
-   - **White sheets:** clears everything near-white.
-   - **Grey or black studio backdrops:** flood-fills from the edges, so dark hair inside the face stays.
-4. Fills the cleared area from the surrounding skin and hair.
-5. Writes `face_<id>.png` and prints a skin colour and a hair colour.
+1. Traces every texel back to the point on the head it covers, and that point's normal.
+2. **Front view** (a box on the sheet): warped so the three points you gave (left pupil, right pupil, lip-line centre) land on the head's. Front-facing points take their colour from it.
+3. **Profile** (`PROFILES`, the right-facing side view beside it): scaled like the front view, eye line level with it, lined up on the nose tip (found automatically). Side-facing points (ears, temples, jaw, the hair at the sides and back) take their colour from it.
+4. Blends the two in two bands: overall colour softly across the whole turn, fine detail from whichever view faces the point best, so there is no tone seam and no doubled features.
+5. Clears the background (white sheets: near-white; grey or black studio backdrops: flood-filled from the edges, so dark hair inside stays). Below the collar line, and near-white shirt collars at the back of the neck, are left out too.
+6. Fills whatever neither view shows (the top and back of the crown, under the chin, the neck) from its surroundings. `HATS` paints short hair over a crown that is hidden under a hat in the reference.
+7. Writes `face_<id>.png` and prints a skin colour and a hair colour.
 
-On the head, the edge of the texture wraps onto the sides and the neck, so a soft fill there is right.
+Textures painted for the old 512 px front projection are moved into the new layout by `legacy_to_new()`; the Forge server does this for old custom faces on start-up and keeps the old file as `face_<id>.512.bak.png`.
 
 ### Add a new face from a new image (step by step)
 
@@ -110,6 +113,7 @@ On the head, the edge of the texture wraps onto the sides and the neck, so a sof
    "f9": ("sheet4", (x0, y0, x1, y1), [(lx, ly), (rx, ry), (mx, my)], (84, 85, 87)),   # studio backdrop colour
    ```
    - **Box:** the front view only. Stop just under the chin or neck, above the shirt, and short of the profile.
+   - **Profile:** add the box round the side view (facing right) to `PROFILES`. Without one, the sides and back are filled from the front view's edges.
    - **Backdrop colour:** the colour of the backdrop near the face.
    - **Tolerance:** a 6th value, `tol` (default 38), sets how far from the backdrop colour a pixel may be and still be cleared. Lower it (for example 22) if grey hair or a grey beard is being cleared.
    - **Face id:** start the id with `m` or `f`. A face id starting with `f` (except `fed`) gets the female body, `person_f`. The skirt and long hair come from the person's `"sex"` in the roster, so set that too.
