@@ -42,23 +42,30 @@ for obj in list(bpy.data.objects):
 
 def apply_shape(obj, rows):
     """Mesh edits from the Forge's Edit shape mode. Each row is [x, y, z, dx, dy, dz] in the part's glTF
-    mesh space (Y up); every vertex at x, y, z (split copies included) moves by dx, dy, dz. Normals
-    round the moved vertices are recomputed smooth; the rest keep the model's own."""
+    mesh space (Y up); every vertex at x, y, z (split copies included) moves by dx, dy, dz. A row may add
+    du, dv: that vertex's texture coordinates move too (glTF UV axes, v down). Normals round the moved
+    vertices are recomputed smooth; the rest keep the model's own."""
     from mathutils import Vector, kdtree
     me = obj.data
     tree = kdtree.KDTree(len(me.vertices))
     for v in me.vertices: tree.insert(v.co, v.index)
     tree.balance()
-    moved = set()
-    for x, y, z, dx, dy, dz in rows:
+    moved, uvs = set(), {}
+    for x, y, z, dx, dy, dz, *duv in rows:
         for _, i, _ in tree.find_range(Vector((x, -z, y)), 2e-4):   # glTF Y-up -> Blender Z-up
             me.vertices[i].co += Vector((dx, -dz, dy))
             moved.add(i)
+            if len(duv) == 2 and (duv[0] or duv[1]): uvs[i] = (duv[0], -duv[1])   # Blender's v runs up
     if not moved:
         print('shape edits matched no vertices on', obj.name); return
+    if uvs:
+        for layer in me.uv_layers:
+            for loop in me.loops:
+                d = uvs.get(loop.vertex_index)
+                if d: u = layer.data[loop.index].uv; layer.data[loop.index].uv = (u[0] + d[0], u[1] + d[1])
     # Fade the baked crease shading (vertex colours) to neutral where vertices moved, as the Forge does.
     fade = {}
-    for x, y, z, dx, dy, dz in rows:
+    for x, y, z, dx, dy, dz, *_ in rows:
         f = min(1.0, (dx * dx + dy * dy + dz * dz) ** 0.5 / 0.004)
         for _, i, _ in tree.find_range(Vector((x, -z, y)), 2e-4): fade[i] = f
     for attr in me.color_attributes:

@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -467,17 +468,19 @@ SHAPE_PARTS = {'person_m','person_f','legs_m','legs_coat','outfit_suit','outfit_
                'hair_short','hair_long','hat','glasses'}
 def clean_shape(shape):
     """Mesh edits made in the Forge: {part: [[x, y, z, dx, dy, dz], ...]}, where x, y, z is a vertex's original
-    position in the part's glTF mesh space and dx, dy, dz how far it moved (metres)."""
+    position in the part's glTF mesh space and dx, dy, dz how far it moved (metres). A row can end with
+    du, dv: a texture offset for that vertex (base shapes use it to fit the face map to a new head)."""
     if not isinstance(shape,dict): return {}
     out={}
     for part,rows in shape.items():
         if part not in SHAPE_PARTS or not isinstance(rows,list): continue
         clean=[]
         for r in rows[:30000]:
-            if not (isinstance(r,(list,tuple)) and len(r)==6): continue
+            if not (isinstance(r,(list,tuple)) and len(r) in (6,8)): continue
             try: v=[float(x) for x in r]
             except (TypeError,ValueError): continue
-            if not all(abs(x)<3 for x in v[:3]) or not all(abs(x)<.5 for x in v[3:]): continue
+            if not all(math.isfinite(x) for x in v): continue
+            if not all(abs(x)<3 for x in v[:3]) or not all(abs(x)<.5 for x in v[3:6]) or not all(abs(x)<2 for x in v[6:]): continue
             clean.append([round(x,5) for x in v])
         if clean: out[part]=clean
     return out

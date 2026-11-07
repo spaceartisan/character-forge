@@ -4,7 +4,9 @@
  * vertices along UV and material seams, and moving one copy without the others would
  * tear the mesh. Edits are stored as [x, y, z, dx, dy, dz] rows per part, x, y, z being
  * the vertex's original position in the part's mesh space; export_character.py applies
- * the same rows in Blender. While editing, the rig holds its rest pose, so a vertex's
+ * the same rows in Blender. A row may carry two more numbers, du, dv: where that vertex reads
+ * its texture, moved (base shapes made by conform_head.py use it to fit faces to a new head).
+ * While editing, the rig holds its rest pose, so a vertex's
  * mesh-space position is exactly where it is drawn.
  */
 import * as THREE from 'three';
@@ -24,6 +26,7 @@ export class PartShape {
       const g = m.geometry, p = g.attributes.position;
       g.userData.orig ??= Float32Array.from(p.array);
       if (g.attributes.normal) g.userData.origNormal ??= Float32Array.from(g.attributes.normal.array);
+      if (g.attributes.uv) g.userData.origUV ??= Float32Array.from(g.attributes.uv.array);
       const o = g.userData.orig, map = new Int32Array(p.count);
       for (let i = 0; i < p.count; i++) {
         const k = keyOf(o[i * 3], o[i * 3 + 1], o[i * 3 + 2]);
@@ -35,6 +38,7 @@ export class PartShape {
     });
     this.key = wid; this.orig = Float32Array.from(wpos); this.cur = Float32Array.from(wpos); this.members = members;
     this.count = members.length;
+    this.duv = new Float32Array(this.count * 2); // texture offsets per vertex (from base shapes)
     // Triangles (welded), per-vertex triangle lists and unique edges.
     const tris = [], triSrc = [];
     this.meshes.forEach((m, mi) => {
@@ -140,6 +144,7 @@ export class PartShape {
     for (const m of this.meshes) {
       const g = m.geometry;
       if (g.attributes.color) g.attributes.color.needsUpdate = true;
+      if (g.attributes.uv) g.attributes.uv.needsUpdate = true;
       g.attributes.position.needsUpdate = true;
       if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
       g.computeBoundingSphere(); g.computeBoundingBox();
@@ -153,24 +158,40 @@ export class PartShape {
   isMoved(w) {
     return Math.abs(this.cur[w * 3] - this.orig[w * 3]) + Math.abs(this.cur[w * 3 + 1] - this.orig[w * 3 + 1]) + Math.abs(this.cur[w * 3 + 2] - this.orig[w * 3 + 2]) > 1e-7;
   }
+  hasUV(w) { return this.duv[w * 2] !== 0 || this.duv[w * 2 + 1] !== 0; }
   rows() {
     const out = [], r = v => Math.round(v * 1e5) / 1e5;
-    for (let w = 0; w < this.count; w++) if (this.isMoved(w)) {
+    for (let w = 0; w < this.count; w++) if (this.isMoved(w) || this.hasUV(w)) {
       const i = w * 3;
-      out.push([r(this.orig[i]), r(this.orig[i + 1]), r(this.orig[i + 2]), r(this.cur[i] - this.orig[i]), r(this.cur[i + 1] - this.orig[i + 1]), r(this.cur[i + 2] - this.orig[i + 2])]);
+      const row = [r(this.orig[i]), r(this.orig[i + 1]), r(this.orig[i + 2]), r(this.cur[i] - this.orig[i]), r(this.cur[i + 1] - this.orig[i + 1]), r(this.cur[i + 2] - this.orig[i + 2])];
+      if (this.hasUV(w)) row.push(r(this.duv[w * 2]), r(this.duv[w * 2 + 1]));
+      out.push(row);
     }
     return out;
+  }
+  // Texture offset of a welded vertex, on every copy of it.
+  setUV(w, du, dv) {
+    this.duv[w * 2] = du; this.duv[w * 2 + 1] = dv;
+    const m = this.members[w];
+    for (let k = 0; k < m.length; k += 2) {
+      const g = this.meshes[m[k]].geometry, uv = g.attributes.uv, o = g.userData.origUV, i = m[k + 1];
+      if (uv && o) uv.setXY(i, o[i * 2] + du, o[i * 2 + 1] + dv);
+    }
   }
   // Show the stored edits (from a saved character): back to the original, then each row moved.
   apply(rows) {
     const json = JSON.stringify(rows || []);
     if (json === this.applied) return false;
     const changed = [];
-    for (let w = 0; w < this.count; w++) if (this.isMoved(w)) { changed.push(w); this.set(w, this.orig[w * 3], this.orig[w * 3 + 1], this.orig[w * 3 + 2]); }
-    for (const [x, y, z, dx, dy, dz] of rows || []) {
+    for (let w = 0; w < this.count; w++) {
+      if (this.isMoved(w)) { changed.push(w); this.set(w, this.orig[w * 3], this.orig[w * 3 + 1], this.orig[w * 3 + 2]); }
+      if (this.hasUV(w)) this.setUV(w, 0, 0);
+    }
+    for (const [x, y, z, dx, dy, dz, du = 0, dv = 0] of rows || []) {
       const w = this.find(x, y, z);
       if (w < 0) continue;
       this.set(w, this.orig[w * 3] + dx, this.orig[w * 3 + 1] + dy, this.orig[w * 3 + 2] + dz); changed.push(w);
+      if (du || dv) this.setUV(w, du, dv);
     }
     this.refresh(changed);
     this.applied = json;
@@ -362,7 +383,7 @@ export class ShapeEditor {
   commit(job) {
     const s = this.part, ids = Int32Array.from(job.wts.map(([w]) => w));
     const after = Float32Array.from([...ids].flatMap(w => [s.cur[w * 3], s.cur[w * 3 + 1], s.cur[w * 3 + 2]]));
-    this.undo.push({ part: s, ids, before: job.before, after }); if (this.undo.length > 100) this.undo.shift();
+    this.undo.push({ part: s, ids, before: job.before, after, uvBefore: job.uvBefore, uvAfter: job.uvBefore && Float32Array.from(s.duv) }); if (this.undo.length > 100) this.undo.shift();
     this.redo = [];
     this.emit();
   }
@@ -416,14 +437,16 @@ export class ShapeEditor {
   restore(step, vals) {
     this.part = step.part;
     step.ids.forEach((w, i) => step.part.set(w, vals[i * 3], vals[i * 3 + 1], vals[i * 3 + 2]));
+    const uv = step.uvBefore && (vals === step.before ? step.uvBefore : step.uvAfter);
+    if (uv) for (let w = 0; w < step.part.count; w++) step.part.setUV(w, uv[w * 2], uv[w * 2 + 1]);
     step.part.refresh([...step.ids]); this.emit(); this.draw();
   }
   resetPart() {
     const s = this.part; if (!s) return;
-    const ids = []; for (let w = 0; w < s.count; w++) if (s.isMoved(w)) ids.push(w);
+    const ids = []; for (let w = 0; w < s.count; w++) if (s.isMoved(w) || s.hasUV(w)) ids.push(w);
     if (!ids.length) return;
-    const job = { wts: ids.map(w => [w, 1, 1]), before: Float32Array.from(ids.flatMap(w => [s.cur[w * 3], s.cur[w * 3 + 1], s.cur[w * 3 + 2]])) };
-    ids.forEach(w => s.set(w, s.orig[w * 3], s.orig[w * 3 + 1], s.orig[w * 3 + 2]));
+    const job = { wts: ids.map(w => [w, 1, 1]), before: Float32Array.from(ids.flatMap(w => [s.cur[w * 3], s.cur[w * 3 + 1], s.cur[w * 3 + 2]])), uvBefore: Float32Array.from(s.duv) };
+    ids.forEach(w => { s.set(w, s.orig[w * 3], s.orig[w * 3 + 1], s.orig[w * 3 + 2]); s.setUV(w, 0, 0); });
     s.refresh(ids); this.commit(job); this.draw();
   }
 

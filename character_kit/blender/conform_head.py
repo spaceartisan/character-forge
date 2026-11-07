@@ -7,7 +7,8 @@ modelled head: each vertex goes to the nearest point on it, then the vertices ar
 surface (and put back on it) so features the new head doesn't have, like the nose and ears, spread
 out flat instead of folding over. Below the neck the kit body is untouched, with a short blend.
 
-Only vertices move, so the rig, skin weights, UVs and face texture all keep working; the result is
+Each vertex also gets a texture offset (face_mapping) so painted faces read right on the new shape.
+Only vertices and UVs move, so the rig, skin weights and face textures all keep working; the result is
 written to data/shapes.json as a base shape (Customize > Body type > Base shape). Re-run it after
 sculpting the .blend to update the shape.
 """
@@ -33,7 +34,8 @@ target_name = argv[2] if len(argv) > 2 else 'MannequinHead'
 
 BLEND_LOW, BLEND_HIGH = 1.47, 1.53   # kit neck below, new head above (metres, Z up)
 RELAX_ITER, RELAX = 30, 0.6
-FEATURE_FACING, PATCH_RINGS, PATCH_ITER = 0.5, 6, 300  # vertices facing off the new surface, spread out
+FEATURE_FACING, PATCH_RINGS, PATCH_ITER = 0.5, 6, 300
+MAP_Z_LOW, MAP_Z_HIGH = 1.60, 1.70   # face mapping: rays leave a vertical axis between these heights  # vertices facing off the new surface, spread out
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=str(ROOT / 'assets' / 'models' / 'human.glb'))
@@ -54,6 +56,48 @@ def nearest(points):
     for i, p in enumerate(points):
         loc, _, _, _ = bvh.find_nearest(Vector(p))
         out[i] = loc if loc is not None else p
+    return out
+
+
+def face_mapping(obj, co, gid, gco, new, w):
+    """Where each vertex of the new head should read the face texture: the point of the original kit
+    head in the same direction from the head's centre axis (horizontal between the brow and the mouth,
+    fanning up over the crown and down under the chin). Painted eyes, nose and mouth then land where they
+    look right from outside instead of being stretched with the vertices that were spread over the new
+    shape. Returns a UV offset per welded vertex (Blender UV axes), blended out with the neck like the
+    move itself. Copies on the UV seam at the back differ by whole tiles, so one offset fits them all."""
+    me = obj.data
+    uvl = me.uv_layers.active.data
+    face = [p for p in me.polygons if obj.material_slots[p.material_index].material
+            and obj.material_slots[p.material_index].material.name.split('.')[0] == 'face']
+    if not face: return np.zeros((len(gco), 2))
+    tri_co = [[co[i] for i in p.vertices] for p in face]
+    tri_uv = [[np.array(uvl[li].uv) for li in p.loop_indices] for p in face]
+    kit = BVHTree.FromPolygons([Vector(c) for c in co], [p.vertices[:] for p in face])
+    vuv = {}
+    for p in face:
+        for vi, li in zip(p.vertices, p.loop_indices): vuv.setdefault(gid[vi], np.array(uvl[li].uv))
+    fz = np.array([c for t in tri_co for c in t])
+    band = fz[(fz[:, 2] > 1.64) & (fz[:, 2] < 1.68)]
+    cy = (band[:, 1].min() + band[:, 1].max()) / 2
+    out = np.zeros((len(gco), 2)); missed = 0
+    for g, uv0 in vuv.items():
+        if w[g] <= 0: continue
+        c = Vector((0.0, cy, float(np.clip(new[g][2], MAP_Z_LOW, MAP_Z_HIGH))))
+        d = Vector(new[g]) - c
+        if d.length < 1e-6: continue
+        loc, _, k, _ = kit.ray_cast(c, d.normalized())
+        if loc is None: missed += 1; continue
+        a, b, cc = (np.array(v) for v in tri_co[k])
+        v0, v1, v2 = b - a, cc - a, np.array(loc) - a
+        d00, d01, d11, d20, d21 = v0 @ v0, v0 @ v1, v1 @ v1, v2 @ v0, v2 @ v1
+        den = d00 * d11 - d01 * d01
+        if abs(den) < 1e-18: missed += 1; continue
+        bv, bw = (d11 * d20 - d01 * d21) / den, (d00 * d21 - d01 * d20) / den
+        uv = (1 - bv - bw) * tri_uv[k][0] + bv * tri_uv[k][1] + bw * tri_uv[k][2]
+        uv[0] += round(uv0[0] - uv[0])   # same tile as this vertex (seam at the back of the head)
+        out[g] = w[g] * (uv - uv0)
+    print(f'  face mapping: {len(vuv)} face vertices, {missed} kept their own UVs (no hit)')
     return out
 
 
@@ -148,6 +192,7 @@ def conform(obj):
         if tn is not None and nrm.length > 0 and nrm.normalized().dot(tn) < -0.2:
             flips += 1
             if flips <= 8: print('    inward at', tuple(round(v, 3) for v in c), 'was', tuple(round(float(v), 3) for v in gco[gs].mean(0)))
+    duv = face_mapping(obj, co, gid, gco, new, w)
     # One row per distinct vertex position (the copies welded above can sit a few hundredths of a mm
     # apart; each row names its own exact position so the Forge and the exporter find it).
     rows, done = [], set()
@@ -159,7 +204,8 @@ def conform(obj):
         done.add(k)
         x, y, zz = c
         rows.append([round(float(x), 5), round(float(zz), 5), round(float(-y), 5),
-                     round(float(d[0]), 5), round(float(d[2]), 5), round(float(-d[1]), 5)])  # Blender -> glTF axes
+                     round(float(d[0]), 5), round(float(d[2]), 5), round(float(-d[1]), 5),   # Blender -> glTF axes
+                     round(float(duv[g][0]), 5), round(float(-duv[g][1]), 5)])               # glTF v runs down
     if preview:
         for i, v in enumerate(me.vertices): v.co = Vector(new[gid[i]])
     print(f'{obj.name}: {len(region)} head/neck vertices fitted, {len(rows)} rows, '
