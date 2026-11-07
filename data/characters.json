@@ -1,0 +1,182 @@
+[
+  {
+    "id": "preset-0",
+    "preset_version": 2,
+    "name": "The Pale Agent",
+    "face": "agent",
+    "body": "m",
+    "outfit": "suit",
+    "hair": "none",
+    "hat": true,
+    "glasses": true,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "suitcloth",
+      "pants": "suitcloth"
+    },
+    "colors": {
+      "skin": "#c2c9c1",
+      "hair": "#332419",
+      "top": "#212125",
+      "shirt": "#dbd9cc",
+      "tie": "#080809",
+      "pants": "#333338",
+      "shoes": "#4c4c4c",
+      "skirt": "#664c4c",
+      "hat": "#212125",
+      "band": "#0d0d0e",
+      "glasses": "#080809"
+    }
+  },
+  {
+    "id": "preset-1",
+    "preset_version": 2,
+    "name": "Bureau Man",
+    "face": "fed",
+    "body": "m",
+    "outfit": "suit",
+    "hair": "short",
+    "hat": true,
+    "glasses": false,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "cloth",
+      "pants": "cloth"
+    },
+    "colors": {
+      "skin": "#6b4530",
+      "hair": "#0f0d0d",
+      "top": "#4c5259",
+      "shirt": "#ccccc4",
+      "tie": "#212b47",
+      "pants": "#47474c",
+      "shoes": "#4c3829",
+      "skirt": "#664c4c",
+      "hat": "#80808a",
+      "band": "#0d0d0e",
+      "glasses": "#080809"
+    }
+  },
+  {
+    "id": "preset-2",
+    "preset_version": 2,
+    "name": "Bureau Man in Trench",
+    "face": "fed",
+    "body": "m",
+    "outfit": "trench",
+    "hair": "short",
+    "hat": true,
+    "glasses": false,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "cloth",
+      "pants": "cloth"
+    },
+    "colors": {
+      "skin": "#6b4530",
+      "hair": "#0f0d0d",
+      "top": "#8f7d59",
+      "shirt": "#ccccc4",
+      "tie": "#332b21",
+      "pants": "#47474c",
+      "shoes": "#4c3829",
+      "skirt": "#664c4c",
+      "hat": "#9e8c6b",
+      "band": "#0d0d0e",
+      "glasses": "#080809"
+    }
+  },
+  {
+    "id": "preset-3",
+    "preset_version": 2,
+    "name": "Townsman",
+    "face": "m1",
+    "body": "m",
+    "outfit": "shirt",
+    "hair": "short",
+    "hat": false,
+    "glasses": false,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "cloth",
+      "pants": "cloth"
+    },
+    "colors": {
+      "skin": "#c9805e",
+      "hair": "#33241a",
+      "top": "#335780",
+      "shirt": "#dbd9cc",
+      "tie": "#080809",
+      "pants": "#571f1c",
+      "shoes": "#664733",
+      "skirt": "#664c4c",
+      "hat": "#212125",
+      "band": "#0d0d0e",
+      "glasses": "#080809"
+    }
+  },
+  {
+    "id": "preset-4",
+    "preset_version": 2,
+    "name": "Deputy",
+    "face": "m4",
+    "body": "m",
+    "outfit": "shirt",
+    "hair": "short",
+    "hat": true,
+    "glasses": false,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "cloth",
+      "pants": "cloth"
+    },
+    "colors": {
+      "skin": "#ab6942",
+      "hair": "#120f0d",
+      "top": "#80704a",
+      "shirt": "#dbd9cc",
+      "tie": "#080809",
+      "pants": "#4c422e",
+      "shoes": "#664733",
+      "skirt": "#664c4c",
+      "hat": "#b2996b",
+      "band": "#0d0d0e",
+      "glasses": "#080809"
+    }
+  },
+  {
+    "id": "preset-5",
+    "preset_version": 2,
+    "name": "Townswoman",
+    "face": "f1",
+    "body": "f",
+    "outfit": "dress",
+    "hair": "long",
+    "hat": false,
+    "glasses": false,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "cloth",
+      "pants": "cloth"
+    },
+    "colors": {
+      "skin": "#d68566",
+      "hair": "#61381f",
+      "top": "#6b4c75",
+      "shirt": "#dbd9cc",
+      "tie": "#080809",
+      "pants": "#333338",
+      "shoes": "#664733",
+      "skirt": "#335780",
+      "hat": "#212125",
+      "band": "#0d0d0e",
+      "glasses": "#080809"
+    }
+  }
+]

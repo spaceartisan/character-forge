@@ -1,0 +1,109 @@
+{
+ "_about": "Dressing rules for the NOBODY CAME character kit, copied from the game's scripts/world/character.gd (read-only reference). The viewer and the Blender export both read this file, so the preview and the exported model always match.",
+ "fabrics": [
+  "cloth",
+  "suitcloth"
+ ],
+ "surfaces": {
+  "top": {
+   "tex": "@top",
+   "rough": 0.85
+  },
+  "shirt": {
+   "tex": "cloth",
+   "rough": 0.85
+  },
+  "tie": {
+   "tex": "cloth",
+   "rough": 0.55
+  },
+  "pants": {
+   "tex": "@pants",
+   "rough": 0.85
+  },
+  "shoes": {
+   "tex": "rubber",
+   "rough": 0.4
+  },
+  "skin": {
+   "tex": "skin",
+   "rough": 0.85
+  },
+  "skirt": {
+   "tex": "cloth",
+   "rough": 0.85
+  },
+  "hat": {
+   "tex": "suitcloth",
+   "rough": 0.85
+  },
+  "band": {
+   "tex": "suitcloth",
+   "rough": 0.85
+  },
+  "hair": {
+   "tex": "hair",
+   "rough": 0.7
+  },
+  "face": {
+   "tex": "@face",
+   "rough": 0.7
+  }
+ },
+ "part_surfaces": {
+  "glasses": {
+   "tex": "rubber",
+   "rough": 0.15,
+   "color": "glasses"
+  }
+ },
+ "face_skin": {
+  "agent": "#ccc9c7",
+  "m1": "#c9805e",
+  "m2": "#d69173",
+  "m3": "#995e3b",
+  "m4": "#ab6942",
+  "m5": "#996147",
+  "m6": "#9e664f",
+  "m7": "#99634a",
+  "f1": "#d68566",
+  "f2": "#d48c6e",
+  "f3": "#a6613d",
+  "f4": "#a86945",
+  "f5": "#c78063",
+  "f6": "#8c543b",
+  "f7": "#915238",
+  "f8": "#874c36",
+  "fed": "#6b4530"
+ },
+ "face_hair": {
+  "m1": "#33241a",
+  "m2": "#4c331f",
+  "m3": "#120f0d",
+  "m4": "#120f0d",
+  "m5": "#4c4033",
+  "m6": "#17120f",
+  "m7": "#120f0d",
+  "f1": "#61381f",
+  "f2": "#5c3821",
+  "f3": "#1c140f",
+  "f4": "#141212",
+  "f5": "#141214",
+  "f6": "#17120f",
+  "f7": "#140f0d",
+  "f8": "#1a1412",
+  "fed": "#0f0d0d"
+ },
+ "loop": [
+  "idle",
+  "still",
+  "walk",
+  "agent_walk",
+  "run",
+  "talk",
+  "phone",
+  "sit",
+  "cower",
+  "cuffed"
+ ]
+}

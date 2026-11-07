@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Character Forge · Character creation studio</title>
+<link rel="stylesheet" href="/static/styles.css">
+<script type="importmap">{
+ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+ }
+}</script>
+</head>
+<body>
+<div id="app">
+ <aside class="nav-rail">
+  <div class="mark">F<span>.</span></div>
+  <div class="rail-block">
+   <button class="rail-button selected" title="Character Studio" aria-label="Character Studio" id="navStudio"><svg viewBox="0 0 24 24"><path d="M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 21c0-4.5 3-7 8-7s8 2.5 8 7"/></svg></button>
+   <button class="rail-button" title="Face Lab" aria-label="Face Lab" id="navFaces"><svg viewBox="0 0 24 24"><path d="M5 6a7 7 0 0 1 14 0v7a7 7 0 0 1-14 0V6Zm3 5h2m4 0h2m-6 5c1.5 1 2.5 1.5 4 0"/></svg></button>
+   <button class="rail-button" title="Saved characters" aria-label="Saved characters" id="navLibrary"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg></button>
+  </div>
+  <div class="rail-bottom"><button class="rail-button" id="navHelp" title="About this project"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 0 1 4.7 1.4c0 1.6-2.4 2-2.4 3.8m0 3.2v.1"/></svg></button><div class="rail-version">V2.0</div></div>
+ </aside>
+ <div class="workspace">
+  <header class="topbar">
+   <div class="breadcrumb"><span>WORKSPACE</span><span class="chev">/</span><strong>CHARACTER STUDIO</strong><span class="chev">/</span><span id="crumbName">The Pale Agent</span></div>
+   <div class="head-actions"><span class="connection"><i></i><span id="engineState">LOCAL PROJECT</span></span><button class="btn btn-ghost small" id="saveTop">Save character</button><button class="btn btn-accent" id="exportTop"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg> Export model</button></div>
+  </header>
+  <div class="columns">
+   <section class="library-panel">
+    <div class="panel-kicker">01 / SOURCE LIBRARY</div>
+    <div class="library-title"><h2>Face library</h2><span class="count-pill" id="faceCount">17</span></div>
+    <p class="muted intro">Start with a painted face reference. The same kit rig powers every character.</p>
+    <div class="search-wrap"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.3"/><path d="m15 15 5 5"/></svg><input type="search" id="faceSearch" placeholder="Search faces..." autocomplete="off"></div>
+    <div class="filter-row"><button class="filter active" data-filter="all">All</button><button class="filter" data-filter="m">Male</button><button class="filter" data-filter="f">Female</button><button class="filter" data-filter="custom">Custom</button></div>
+    <div class="face-grid" id="faceGrid"><div class="loading-cards">Loading face references...</div></div>
+    <button class="add-face" id="addFace"><span class="add-symbol">+</span><span><strong>Import a new face</strong><small>PNG, JPG or WebP reference</small></span><span class="arrow">↗</span></button>
+    <div class="library-footer"><span class="tiny-dot"></span> <span id="faceFoot">Source pipeline ready</span></div>
+   </section>
+   <main class="studio-panel">
+    <div class="studio-header"><div><div class="panel-kicker">02 / WORKSPACE</div><div class="hero-name" contenteditable="true" spellcheck="false" id="characterName" role="textbox" aria-label="Character name">The Pale Agent</div><div class="hero-sub"><span class="green-bullet"></span> RIGGED HUMANOID <span>·</span> GLTF 2.0 <span>·</span> GODOT READY</div></div><div class="studio-index">CHARACTER <b id="characterIndex">001</b></div></div>
+    <div class="viewport" id="viewport">
+     <div class="viewport-accent tl"></div><div class="viewport-accent tr"></div><div class="viewport-accent bl"></div><div class="viewport-accent br"></div>
+     <div class="view-label"><span class="live-dot"></span><span id="viewLabel">PERSPECTIVE / LIVE VIEW</span></div>
+     <div class="viewport-topright"><span id="polyReadout">REAL-TIME MODEL</span></div>
+     <div id="stage"><img id="previewFallback" src="/static/preview_agent.png" alt="Character studio preview" class="preview-fallback"><div id="viewerHint">Initializing 3D viewer...</div></div>
+     <div class="viewport-info"><span class="crosshair">＋</span> <span>ORBIT TO INSPECT</span></div>
+     <div class="view-controls"><div class="view-group"><button class="view-button active" data-view="front">FRONT</button><button class="view-button" data-view="side">SIDE</button><button class="view-button" data-view="back">BACK</button><button class="view-button" data-view="free">3D</button></div><div class="zoom-controls"><button id="zoomOut" aria-label="Zoom out">−</button><button id="resetView" aria-label="Reset camera">⌖</button><button id="zoomIn" aria-label="Zoom in">+</button></div></div>
+    </div>
+    <div class="motion-bar"><div class="motion-icon">◉</div><div class="motion-desc"><strong>Motion preview</strong><small>Use the original skeleton's animation library</small></div><div class="motion-control"><select id="animationSelect" aria-label="Animation"><option>idle</option></select><button class="play-button" id="playToggle" title="Play / pause">❚❚</button></div></div>
+    <div class="stage-footer"><span><span class="tiny-dot"></span> <b id="meshStatus">SOURCE READY</b></span><span id="stageStatus">17 bones · 13 animation clips</span><button id="resetCharacter" class="text-button">Reset to default ↻</button></div>
+   </main>
+   <aside class="inspector-panel">
+    <div class="inspector-title"><div><div class="panel-kicker">03 / CHARACTER EDITOR</div><h2>Customize</h2></div><button class="more-button" id="savePreset" title="Save character">＋</button></div>
+    <div class="tab-row"><button class="tab active" data-tab="appearance">APPEARANCE</button><button class="tab" data-tab="materials">MATERIALS</button><button class="tab" data-tab="motion">MOTION</button></div>
+    <div class="inspector-scroll">
+     <div class="tab-page active" data-page="appearance">
+      <div class="edit-section"><div class="section-title"><span>01</span><h3>Body type</h3></div><div class="segment" id="bodyType"><button class="active" data-body="m"><span class="person-icon">♟</span> Masculine</button><button data-body="f"><span class="person-icon">♟</span> Feminine</button></div><p class="hint">Uses the kit's original male or female mesh and shared armature.</p></div>
+      <div class="edit-section"><div class="section-title"><span>02</span><h3>Wardrobe</h3></div><div class="outfit-grid" id="outfitGrid"><button data-outfit="suit"><span class="outfit-icon">♢</span><strong>Tailored suit</strong></button><button data-outfit="trench" class="active"><span class="outfit-icon">▤</span><strong>Trench coat</strong></button><button data-outfit="shirt"><span class="outfit-icon">≋</span><strong>Casual shirt</strong></button><button data-outfit="dress"><span class="outfit-icon">♧</span><strong>Dress</strong></button></div></div>
+      <div class="edit-section"><div class="section-title"><span>03</span><h3>Hair style</h3></div><div class="style-grid" id="hairGrid"><button data-hair="none" class="active"><span class="hair-icon">○</span>None</button><button data-hair="short"><span class="hair-icon">◠</span>Short</button><button data-hair="long"><span class="hair-icon">◡</span>Long</button></div></div>
+      <div class="edit-section"><div class="section-title"><span>04</span><h3>Accessories</h3></div><label class="toggle-row"><span class="toggle-glyph">▱</span><span class="toggle-text"><strong>Fedora hat</strong><small>Period-correct brim</small></span><input type="checkbox" id="hatToggle"><span class="toggle"></span></label><label class="toggle-row"><span class="toggle-glyph">⌐</span><span class="toggle-text"><strong>Dark glasses</strong><small>Frame with lenses</small></span><input type="checkbox" id="glassesToggle"><span class="toggle"></span></label></div>
+      <div class="edit-section"><div class="section-title"><span>05</span><h3>Model scale</h3></div><div class="slider-header"><span>Height multiplier</span><strong id="scaleLabel">1.00×</strong></div><input type="range" id="scaleInput" min="0.75" max="1.3" step="0.01" value="1"><div class="slider-end"><span>0.75×</span><span>1.30×</span></div></div>
+     </div>
+     <div class="tab-page" data-page="materials"><div class="section-title top-section"><span>01</span><h3>Surface palette</h3></div><p class="hint">Each colour tints the kit's cloth, skin and rubber textures, the same way the game dresses its people. The export uses the same textures and tints.</p><div class="color-fields fabric-fields"><div class="color-field"><label for="fabric_top">Outer garment fabric</label><select id="fabric_top" data-fabric="top"><option value="cloth">Cloth</option><option value="suitcloth">Suit cloth</option></select></div><div class="color-field"><label for="fabric_pants">Trouser fabric</label><select id="fabric_pants" data-fabric="pants"><option value="cloth">Cloth</option><option value="suitcloth">Suit cloth</option></select></div></div><div id="colorFields" class="color-fields"></div><button id="paletteReset" class="outline-wide">Reset material palette ↻</button></div>
+     <div class="tab-page" data-page="motion"><div class="section-title top-section"><span>01</span><h3>Animation library</h3></div><p class="hint">13 actions come directly from the original Blender rig and export with the model.</p><div id="motionList" class="motion-list"></div><div class="slider-header"><span>Playback speed</span><strong id="speedLabel">1.0×</strong></div><input type="range" min="0.25" max="2" value="1" step="0.05" id="speedRange"><div class="slider-end"><span>0.25×</span><span>2.00×</span></div></div>
+    </div>
+    <div class="inspector-footer"><div class="export-note"><span>◆</span><div><strong>Ready for your game</strong><small>Skinned mesh, kit textures & 13 animations</small></div></div><button class="btn btn-accent wide" id="exportBottom">Export .GLB <span>↗</span></button></div>
+   </aside>
+  </div>
+  <footer class="status-strip"><span class="small-logo">FORGE / CHARACTER KIT</span><span class="sep"></span><span id="bottomStatus">SOURCE: NOBODY CAME / character_kit</span><span class="footer-right">LOCAL WORKSPACE <span class="tiny-dot"></span> BLENDER PIPELINE</span></footer>
+ </div>
+</div>
+<div id="modalBackdrop" class="modal-backdrop hidden" aria-hidden="true"><div class="modal" id="dialogContent"></div></div>
+<div id="toast" class="toast" role="status"></div>
+<script type="module" src="/static/app.js?v=2.0.0"></script>
+</body>
+</html>
