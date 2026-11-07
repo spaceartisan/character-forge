@@ -117,8 +117,9 @@ export async function startViewer(stage, src, rules) {
     return rules.surfaces[slot];
   }
 
+  let faceOverride = null; // e.g. the source-mapping region preview, shown in place of the face texture
   function textureFor(tex, cfg) {
-    if (tex === '@face') return '/textures/face_' + encodeURIComponent(cfg.face) + '.png';
+    if (tex === '@face') return faceOverride || '/textures/face_' + encodeURIComponent(cfg.face) + '.png';
     if (tex === '@top') tex = cfg.fabric?.top || 'cloth';
     if (tex === '@pants') tex = cfg.fabric?.pants || 'cloth';
     return '/materials/' + tex + '.png';
@@ -204,6 +205,10 @@ export async function startViewer(stage, src, rules) {
     dir.setLength(THREE.MathUtils.clamp(dir.length() + delta * scale, controls.minDistance, controls.maxDistance));
     camera.position.copy(controls.target).add(dir); controls.update();
   }
+  function setFaceOverride(url) {
+    faceOverride = url || null;
+    if (current) update(current);
+  }
   function setHeadOptions(opts) {
     Object.assign(headView, opts);
     if (current) update(current);
@@ -213,7 +218,7 @@ export async function startViewer(stage, src, rules) {
   // external editor shows up here on save.
   let faceStamp = { face: null, stamp: null };
   async function checkFace() {
-    if (!current || document.hidden) return;
+    if (!current || document.hidden || faceOverride) return;
     const face = current.face, url = '/textures/face_' + encodeURIComponent(face) + '.png';
     try {
       const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
@@ -231,7 +236,7 @@ export async function startViewer(stage, src, rules) {
   setView('front');
 
   return {
-    update, play, setView, zoom, headAngle, setHeadOptions,
+    update, play, setView, zoom, headAngle, setHeadOptions, setFaceOverride,
     onFaceReload: fn => { onFaceReload = fn; },
     setPlaying: v => { playing = v; },
     setSpeed: v => { speed = v; },
@@ -242,7 +247,7 @@ export async function startViewer(stage, src, rules) {
 class TextureCache {
   constructor() { this.loader = new THREE.TextureLoader(); this.cache = new Map(); }
   get(url, isFace) {
-    const key = isFace ? url + '?v=' + Date.now() : url; // faces can be regenerated in Face Lab
+    const key = isFace ? url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now() : url; // faces can be regenerated in Face Lab
     if (!isFace && this.cache.has(key)) return this.cache.get(key);
     const p = this.loader.loadAsync(key).then(t => {
       t.flipY = false; // glTF UV convention

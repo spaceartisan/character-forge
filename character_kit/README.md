@@ -92,11 +92,24 @@ Always look at them: the numbers won't show you a bad face.
 
 1. Traces every texel back to the point on the head it covers, and that point's normal.
 2. **Front view** (a box on the sheet): warped so the three points you gave (left pupil, right pupil, lip-line centre) land on the head's. Front-facing points take their colour from it.
-3. **Profile** (`PROFILES`, the right-facing side view beside it): scaled like the front view, eye line level with it, lined up on the nose tip (found automatically). Side-facing points (ears, temples, jaw, the hair at the sides and back) take their colour from it.
-4. Blends the two in two bands: overall colour softly across the whole turn, fine detail from whichever view faces the point best, so there is no tone seam and no doubled features.
+3. **Profile** (`PROFILES`, the right-facing side view beside it): eye line level with the front view, nose tip on the head's nose tip (found automatically), and stretched front-to-back so its ear lands on the head's ear (`PROFILE_EARS`, the ear centre in sheet pixels). Painted heads are 10-30% deeper from nose to ear than the kit's head; without the ear fit the painted ear lands behind the 3D ear and the profile's eye lands on the temple.
+4. **Source mapping** decides which view paints which part of the head, so two views never draw the same feature (see below). Inside a region, fine detail comes from its chosen view; overall tone fades across region edges so they don't show as lines.
 5. Clears the background (white sheets: near-white; grey or black studio backdrops: flood-filled from the edges, so dark hair inside stays). Below the collar line, and near-white shirt collars at the back of the neck, are left out too.
 6. Fills whatever neither view shows (the top and back of the crown, under the chin, the neck) from its surroundings. `HATS` paints short hair over a crown that is hidden under a hat in the reference.
 7. Writes `face_<id>.png` and prints a skin colour and a hair colour.
+
+**Source mapping.** The head is split into regions: eyes, nose, mouth & cheeks; forehead & hairline; chin & jaw; sides of the jaw; temples & side hair; ears; back of the head; top of the head; neck. Each takes one source:
+
+| Source | Paints the region from |
+|---|---|
+| Front | the front view only |
+| Side | the profile only (kept 1.5 cm clear of the profile's facial outline) |
+| Both | a blend of the two, by which one faces the point better |
+| Fill | neither: a smooth fill from around it |
+
+"Front view reaches back" (default 55 degrees) sets where the face regions end and the side regions begin. The defaults (`MAPPING_DEFAULT`) are: face, forehead and chin from the front; sides of the jaw, temples, ears, back and top from the side; the neck from both. Where a region's view has nothing usable (backdrop), it borrows the other view rather than blurring its neighbours.
+
+Change a face's mapping in the Forge: head mode, **Map sources**. It shows the regions on the head, coloured by source, and **Rebake texture** bakes the face again (the previous PNG is kept as `face_<id>.prev.png`). Choices are saved per face in `faces/mappings.json`, which `build.py --faces` also uses.
 
 Textures painted for the old 512 px front projection are moved into the new layout by `legacy_to_new()`; the Forge server does this for old custom faces on start-up and keeps the old file as `face_<id>.512.bak.png`.
 
@@ -113,7 +126,7 @@ Textures painted for the old 512 px front projection are moved into the new layo
    "f9": ("sheet4", (x0, y0, x1, y1), [(lx, ly), (rx, ry), (mx, my)], (84, 85, 87)),   # studio backdrop colour
    ```
    - **Box:** the front view only. Stop just under the chin or neck, above the shirt, and short of the profile.
-   - **Profile:** add the box round the side view (facing right) to `PROFILES`. Without one, the sides and back are filled from the front view's edges.
+   - **Profile:** add the box round the side view (facing right) to `PROFILES`, and the centre of its ear (sheet pixels) to `PROFILE_EARS`. Without a profile, the sides and back are filled from the front view's edges.
    - **Backdrop colour:** the colour of the backdrop near the face.
    - **Tolerance:** a 6th value, `tol` (default 38), sets how far from the backdrop colour a pixel may be and still be cleared. Lower it (for example 22) if grey hair or a grey beard is being cleared.
    - **Face id:** start the id with `m` or `f`. A face id starting with `f` (except `fed`) gets the female body, `person_f`. The skirt and long hair come from the person's `"sex"` in the roster, so set that too.

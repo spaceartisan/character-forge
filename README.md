@@ -44,6 +44,7 @@ Use **Import a new face**, choose an image, then:
 - Click the **Left eye**, **Right eye**, or **Lip center** tool, then click the corresponding point on the reference.
 - Choose the studio backdrop color (white by default, or dark grey for studio photos). Background tolerance controls which colors are removed.
 - Give the result a **new face ID** and click **Generate face texture**. The original `faces_from_refs.py` warp/fill process writes a 1024×1024 PNG that wraps round the whole head (front view only; built-in faces also use a profile view). It appears in the face gallery immediately.
+- In head mode, **Map sources** chooses which view of the reference (front, side, both or a smooth fill) paints each part of the head, previews the regions on the 3D head, and rebakes the texture.
 
 The original painted eyes and expressions are 2D face textures projected onto an existing 3D head. This does not automatically reconstruct a unique head mesh or a fully sculpted likeness from the reference. The original source kit notes that the common head shape works better than its earlier per-person head deformations.
 

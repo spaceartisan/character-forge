@@ -16,3 +16,7 @@ exports/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Face Forge working files: previous bake kept on rebake, pre-1024 originals
+assets/textures/*.prev.png
+assets/textures/*.512.bak.png

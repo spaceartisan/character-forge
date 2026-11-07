@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 import zipfile
@@ -262,9 +263,8 @@ def render_face(body:FaceRender):
 def open_face_texture(face_id:str):
     """Open a face texture in the system's default image editor (head mode's 'Open texture').
     The viewer reloads the texture when the file changes, so saving shows up straight away."""
-    if not re.fullmatch(r'[a-z][a-z0-9_]{0,20}',face_id): raise HTTPException(400,'Invalid face')
+    check_face(face_id)
     path=TEXTURES/f'face_{face_id}.png'
-    if not path.is_file(): raise HTTPException(404,'Face texture missing')
     try:
         if os.name=='nt': os.startfile(str(path))  # noqa: S606  local tool, fixed path inside the project
         elif sys.platform=='darwin': subprocess.Popen(['open',str(path)])
@@ -272,6 +272,69 @@ def open_face_texture(face_id:str):
     except OSError as ex:
         raise HTTPException(500,f'Could not open the texture: {ex}')
     return {'ok':True,'file':str(path.relative_to(ROOT)).replace('\\','/')}
+
+# ---- Face source mapping: which part of the head takes which view of the reference (head mode)
+FACE_ID = re.compile(r'[a-z][a-z0-9_]{0,20}')
+BAKE_LOCK = threading.Lock()
+
+def face_sources(fid):
+    """How a face is baked: (has a profile view, rebake function) or None if it cannot be rebaked."""
+    if fid in face_pipeline.REFS:
+        return bool(face_pipeline.PROFILES.get(fid)), lambda m: face_pipeline.build_ref(fid, m)
+    c=read_json(CUSTOM_FILE,{}).get(fid)
+    if c and (REF_DIR/f"{c['source_id']}.png").is_file():
+        back=tuple(int(c['backdrop'][i:i+2],16) for i in (1,3,5))
+        return False, lambda m: face_pipeline.build(fid,c['source_id'],tuple(c['box']),[tuple(p) for p in c['points']],back,c['tolerance'],mapping=m)
+    return None
+
+def check_face(fid):
+    if not FACE_ID.fullmatch(fid): raise HTTPException(400,'Invalid face')
+    if not (TEXTURES/f'face_{fid}.png').is_file(): raise HTTPException(404,'Face texture missing')
+
+@app.get('/api/faces/{face_id}/mapping')
+def get_face_mapping(face_id:str):
+    check_face(face_id)
+    src=face_sources(face_id)
+    return {'mapping':face_pipeline.mapping_for(face_id),'default':face_pipeline.clean_mapping(None),
+            'regions':[{'id':k,'label':v} for k,v in face_pipeline.REGIONS],'sources':list(face_pipeline.SOURCES),
+            'has_profile':bool(src and src[0]),'can_rebake':src is not None,
+            'saved':face_id in face_pipeline.load_mappings()}
+
+@app.get('/api/faces/{face_id}/regions.png')
+def face_regions_png(face_id:str, m:str=''):
+    """The regions coloured by source over the face texture: a live preview before rebaking."""
+    check_face(face_id)
+    try: mapping=json.loads(m) if m else face_pipeline.mapping_for(face_id)
+    except ValueError: raise HTTPException(400,'Invalid mapping')
+    with Image.open(TEXTURES/f'face_{face_id}.png') as tex:
+        img=face_pipeline.region_preview(mapping if isinstance(mapping,dict) else None, tex)
+    buf=io.BytesIO(); img.save(buf,'PNG')
+    return Response(buf.getvalue(),media_type='image/png',headers={'Cache-Control':'no-store'})
+
+class MappingWrite(BaseModel):
+    mapping:dict
+
+@app.post('/api/faces/{face_id}/mapping')
+def save_face_mapping(face_id:str, body:MappingWrite):
+    """Save the face's source mapping and rebake its texture. The previous texture is kept as face_<id>.prev.png."""
+    check_face(face_id)
+    src=face_sources(face_id)
+    if src is None: raise HTTPException(400,'This face has no saved reference to rebake from')
+    mapping=face_pipeline.clean_mapping(body.mapping)
+    path=TEXTURES/f'face_{face_id}.png'
+    with BAKE_LOCK:
+        shutil.copy2(path,path.with_name(f'face_{face_id}.prev.png'))
+        try:
+            src[1](mapping)
+        except Exception as ex:
+            raise HTTPException(400,f'Rebake failed: {ex}')
+        saved=face_pipeline.load_mappings()
+        if mapping==face_pipeline.clean_mapping(None): saved.pop(face_id,None)
+        else: saved[face_id]=mapping
+        write_json(face_pipeline.MAPPINGS_FILE,saved)
+    f=face_meta(face_id)
+    f['texture']+='?v='+str(int(time.time()*1000))
+    return {'ok':True,'face':f,'mapping':mapping,'backup':f'face_{face_id}.prev.png'}
 
 class PresetWrite(BaseModel):
     character:dict

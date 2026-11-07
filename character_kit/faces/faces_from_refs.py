@@ -75,6 +75,18 @@ PROFILES = {
     "m6": (345, 600, 650, 780), "f7": (985, 600, 1312, 800), "f8": (345, 900, 650, 1095), "m7": (985, 900, 1312, 1085),
     "agent": (1024, 262, 1536, 545),
 }
+# Ear centre in each profile (sheet pixels). Painted heads are deeper from nose to ear than the kit's
+# head (by 10-30%) and their ears sit a little lower, so the profile is stretched to put its nose tip on
+# the head's nose tip and its ear on the head's ear; with one scale for the whole profile, the painted
+# ear lands behind the 3D ear and the profile's eye on the temple.
+PROFILE_EARS = {
+    "m1": (1043, 426), "m2": (1048, 435), "f1": (1106, 430), "f2": (1102, 433),
+    "m3": (528, 240), "m4": (1296, 234), "f3": (554, 750), "f4": (1294, 739),
+    "fed": (443, 112), "f5": (1122, 115), "m5": (442, 397), "f6": (1119, 411),
+    "m6": (456, 714), "f7": (1141, 724), "f8": (471, 1012), "m7": (1108, 1010),
+    "agent": (1242, 344),
+}
+EAR_Y, EAR_Z = .014, 1.668        # the head's ear centre (blender_people.head_field)
 # Texel positions (new layout) sampled for colour reports: a cheek, and hair above the forehead.
 CHEEK, HAIR = (406, 557), (512, 205)
 
@@ -210,9 +222,11 @@ def find_profile(src, box, backdrop, tol, scale, eye_row):
     """Nose-tip column of a right-facing profile in box, at the height the front view's scale gives."""
     crop = src.crop(box)
     mask = subject_mask(crop, backdrop, tol) > .5
-    row = int(round(eye_row + (EYE_Z - NOSE_Z) * scale)) - box[1]
-    band = max(2, int(.006 * scale))
-    rows = mask[max(0, row - band):row + band + 1]
+    # The most forward point from 1.5 to 5.5 cm below the eyes: the nose tip, under any sunglasses
+    # and above the lips (a single predicted row can land on the lip when the sheet's scale is off).
+    top = int(round(eye_row + .015 * scale)) - box[1]
+    bottom = int(round(eye_row + .055 * scale)) - box[1]
+    rows = mask[max(0, top):max(top + 1, bottom)]
     cols = np.nonzero(rows.any(0))[0]
     if not len(cols):
         raise ValueError("No profile found beside the front view")
@@ -220,26 +234,133 @@ def find_profile(src, box, backdrop, tol, scale, eye_row):
 
 
 # ------------------------------------------------------------------ the bake
-def blur_norm(c, w, r):
-    """Weighted Gaussian blur of colour c (HxWx3) by weights w: the local weighted mean."""
+def smooth(a, r):
+    """Gaussian-like blur (three box passes) of an HxW array; wraps round in u (the seam), clamps in v."""
     def box(a, ax):
-        # Running-sum box filter; wraps round in u (the texture's seam), clamps in v.
         k = 2 * r + 1
         pad = [(0, 0)] * a.ndim; pad[ax] = (r + 1, r)
         a = np.pad(a, pad, mode="wrap" if ax == 1 else "edge")
         c = np.cumsum(a, ax)
         return (np.take(c, range(k, c.shape[ax]), ax) - np.take(c, range(0, c.shape[ax] - k), ax)) / k
-
-    def g(a):
-        for _ in range(3):                       # three box passes ~ a Gaussian
-            a = box(box(a, 0), 1)
-        return a
-    sw = g(w)
-    return np.stack([g(c[..., i] * w) for i in range(3)], 2) / np.maximum(sw, 1e-6)[..., None], sw
+    for _ in range(3):
+        a = box(box(a, 0), 1)
+    return a
 
 
-def bake(src, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, hat=None):
-    """Face texture (TEX x TEX RGB uint8) for a sheet, given its front box and points, optional profile box."""
+def blur_norm(c, w, r):
+    """Weighted blur of colour c (HxWx3) by weights w: the local weighted mean, and the blurred weight."""
+    sw = smooth(w, r)
+    return np.stack([smooth(c[..., i] * w, r) for i in range(3)], 2) / np.maximum(sw, 1e-6)[..., None], sw
+
+
+# ------------------------------------------------------------------ source mapping
+# The head is split into regions, and each region takes its colour from a chosen source, so two views
+# never both paint the same feature (a painted profile is rarely the exact depth of the kit's head:
+# blended freely, its eye lands on the temple beside the front view's eye).
+REGIONS = [
+    ("face", "Eyes, nose, mouth & cheeks"),
+    ("forehead", "Forehead & hairline"),
+    ("jaw", "Chin & jaw"),
+    ("lowcheeks", "Sides of the jaw"),
+    ("temples", "Temples & side hair"),
+    ("ears", "Ears"),
+    ("back", "Back of the head"),
+    ("crown", "Top of the head"),
+    ("neck", "Neck"),
+]
+SOURCES = ("front", "side", "both", "fill")
+MAPPING_DEFAULT = {
+    "reach": 55,          # degrees round from straight ahead that the front view covers
+    "regions": {"face": "front", "forehead": "front", "jaw": "front", "lowcheeks": "side", "temples": "side",
+                "ears": "side", "back": "side", "crown": "side", "neck": "both"},
+}
+MAPPINGS_FILE = HERE / "mappings.json"      # per-face choices saved from the Forge's head mode
+HEAD_AXIS_Y = .012
+SILHOUETTE_MARGIN = .015         # metres kept clear of the profile's facial outline
+EAR = (.014, 1.668, .03, .042)              # centre y, z and half-sizes round blender_people's ear
+
+
+def load_mappings():
+    try:
+        return json.loads(MAPPINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def clean_mapping(m):
+    """A complete, valid mapping from a partial or untrusted one."""
+    m = m or {}
+    reach = m.get("reach", MAPPING_DEFAULT["reach"])
+    reach = float(reach) if isinstance(reach, (int, float)) else MAPPING_DEFAULT["reach"]
+    regions = dict(MAPPING_DEFAULT["regions"])
+    for k, v in (m.get("regions") or {}).items():
+        if k in regions and v in SOURCES:
+            regions[k] = v
+    return {"reach": min(90.0, max(30.0, reach)), "regions": regions}
+
+
+def mapping_for(name):
+    return clean_mapping(load_mappings().get(name))
+
+
+def region_labels(reach):
+    """Index into REGIONS for every texel (-1 where the texture is unused)."""
+    P, N, cover = head_map()
+    x, y, z = P[..., 0], P[..., 1], P[..., 2]
+    theta = np.degrees(np.arctan2(np.abs(x), -(y - HEAD_AXIS_Y)))
+    ear = (np.abs(x) > .062) & (((y - EAR[0]) / EAR[2]) ** 2 + ((z - EAR[1]) / EAR[3]) ** 2 < 1)
+    lab = np.full(z.shape, REGIONS.index(("neck", "Neck")))
+    ids = {k: i for i, (k, _) in enumerate(REGIONS)}
+    front = theta <= reach
+    lab = np.where(front & (z <= 1.585) & (z > 1.53), ids["jaw"], lab)
+    lab = np.where(~front & (theta <= 115) & (z > 1.60), ids["temples"], lab)
+    lab = np.where(~front & (theta <= 100) & (z > 1.56) & (z <= 1.635), ids["lowcheeks"], lab)
+    lab = np.where((theta > 115) & (z > 1.60), ids["back"], lab)
+    lab = np.where(front & (z > 1.585), ids["face"], lab)
+    lab = np.where(front & (z > 1.71), ids["forehead"], lab)
+    lab = np.where((z > 1.75) | ((z > 1.735) & ~front), ids["crown"], lab)
+    lab = np.where(ear, ids["ears"], lab)
+    return np.where(cover, lab, -1)
+
+
+def source_weights(mapping, feather=7):
+    """Front and side multipliers per texel for a mapping, feathered by `feather` texels at region edges."""
+    lab = region_labels(mapping["reach"])
+    wf = np.zeros(lab.shape); ws = np.zeros(lab.shape)
+    for i, (k, _) in enumerate(REGIONS):
+        src = mapping["regions"][k]
+        sel = lab == i
+        wf[sel] = src in ("front", "both")
+        ws[sel] = src in ("side", "both")
+    return smooth(wf, feather), smooth(ws, feather)
+
+
+REGION_COLOURS = {"front": (70, 140, 230), "side": (235, 150, 60), "both": (170, 115, 230), "fill": (120, 125, 130)}
+
+
+def region_preview(mapping, texture=None):
+    """The head's regions coloured by source, over the face texture in grey, with the edges drawn."""
+    mapping = clean_mapping(mapping)
+    lab = region_labels(mapping["reach"])
+    out = np.zeros(lab.shape + (3,))
+    for i, (k, _) in enumerate(REGIONS):
+        out[lab == i] = REGION_COLOURS[mapping["regions"][k]]
+    if texture is not None:
+        g = np.asarray(texture.convert("L").resize((TEX, TEX)), float)[..., None]
+        out = out * .55 + g * .45 * np.array([1, 1, 1])
+    edge = np.zeros(lab.shape, bool)
+    edge[:, 1:] |= lab[:, 1:] != lab[:, :-1]
+    edge[1:, :] |= lab[1:, :] != lab[:-1, :]
+    edge &= (lab >= 0)
+    edge = np.asarray(Image.fromarray((edge * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3))) > 0
+    out[edge] = (250, 250, 245)
+    out[lab < 0] = (40, 44, 48)
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+
+
+def bake(src, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, hat=None, mapping=None, ear=None):
+    """Face texture (TEX x TEX RGB uint8) for a sheet, given its front box and points, optional profile box,
+    and which regions of the head take which view (MAPPING_DEFAULT if none)."""
     P, N, cover = head_map()
     x, y, z = P[..., 0], P[..., 1], P[..., 2]
     back = np.clip((y + .02) / .07, 0, 1)
@@ -256,7 +377,9 @@ def bake(src, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, hat=None
     cf, mf = sample(full, front_mask, fx, fy)
     # Dark sunglasses or a hat brim can join the backdrop in a studio shot; the inner face never is one.
     oval = ((x / FACE_OVAL[1]) ** 2 + ((z - FACE_OVAL[0]) / FACE_OVAL[2]) ** 2 < 1) & (N[..., 1] < -.5)
-    mf = np.where(oval, 1, mf)
+    # Only dark pixels (lenses, frames, shadow) are let back in, so a narrow painted face never pulls
+    # in the backdrop beside it.
+    mf = np.where(oval & (cf.mean(2) < 70), 1, mf)
     views = [(cf, np.clip(-N[..., 1], 0, 1) * mf * neck * cover)]
     if profile:
         # Scale and eye line from the front view; nose tip found in the profile.
@@ -265,9 +388,24 @@ def bake(src, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, hat=None
         nose_col = find_profile(src, profile, backdrop, tol, scale, eye_row)
         side_mask = np.zeros(full.shape[:2])
         side_mask[profile[1]:profile[3], profile[0]:profile[2]] = subject_mask(src.crop(profile), backdrop, tol)
-        sx = nose_col + (NOSE_Y - y) * scale          # forward (-y) is to the right in the profile
-        sy = eye_row - (z - EYE_Z) * scale
+        if ear:
+            # Nose tip on the nose tip, ear on the ear: depth scaled to fit, height shifted towards the ear.
+            depth = (nose_col - ear[0]) / (EAR_Y - NOSE_Y)
+            t = np.clip((y - NOSE_Y) / (EAR_Y - NOSE_Y), 0, 1)
+            drop = (ear[1] - (eye_row - (EAR_Z - EYE_Z) * scale)) * t
+        else:
+            depth, drop = scale, 0
+        sx = nose_col + (NOSE_Y - y) * depth          # forward (-y) is to the right in the profile
+        sy = eye_row - (z - EYE_Z) * scale + drop
         cp, mp = sample(full, side_mask, sx, sy)
+        # Keep clear of the profile's facial outline (nose, lips, chin against the backdrop): the kit's
+        # face is shaped differently, so those edge pixels would draw a second outline on the cheek.
+        crop = side_mask[profile[1]:profile[3], profile[0]:profile[2]] > .5
+        cols = np.where(crop.any(1), profile[0] + crop.shape[1] - 1 - np.argmax(crop[:, ::-1], 1), -1e9)
+        front_col = np.full(full.shape[0], -1e9); front_col[profile[1]:profile[3]] = cols
+        rows = np.clip(np.round(sy).astype(int), 0, full.shape[0] - 1)
+        margin = SILHOUETTE_MARGIN * depth
+        mp = mp * np.clip((front_col[rows] - margin - sx) / (.5 * margin), 0, 1)
         views.append((cp, np.clip(np.abs(N[..., 0]), 0, 1) * mp * neck * cover))
 
     # A white shirt collar can reach above the collar line; keep it off the neck.
@@ -278,17 +416,38 @@ def bake(src, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, hat=None
         return np.where(shirt, 0, w)
     views = [(c, shirtless(c, w)) for c, w in views]
 
-    # Two-band blend: broad colour from both views with soft weights (no tone seam where they meet),
-    # fine detail from whichever view faces the point best (no ghosted double features).
+    # Each region only takes the sources its mapping allows. Fine detail switches sources within a few
+    # millimetres of a region edge; overall tone fades across ~2 cm, so a lighter profile cheek meets a
+    # front view that shades darker towards its outline without a visible line.
+    mapping = clean_mapping(mapping)
+
+    def allowed(feather):
+        mult = source_weights(mapping, feather)
+        chosen = [w * m for (_, w), m in zip(views, mult)]
+        if len(views) == 2:
+            # Where a region's one chosen view has nothing usable (backdrop, or kept clear of the profile's
+            # outline), borrow the other view rather than blurring the neighbouring hair and beard over it.
+            lack = [np.clip(1 - w * 4, 0, 1) for w in chosen]
+            borrowed = [views[i][1] * mult[1 - i] * (1 - mult[i]) * lack[1 - i] * .5 for i in (0, 1)]
+            chosen = [chosen[i] + borrowed[i] for i in (0, 1)]
+        return chosen
+
+    near, wide = allowed(7), allowed(22)
+
+    # Two-band blend: broad colour from the views with soft weights, fine detail from whichever view
+    # faces the point best (no ghosted double features).
     lows, details, soft, sharp = [], [], [], []
-    for c, w in views:
-        low, _ = blur_norm(c, w ** 2, 6)
+    for (c, w), wn, ww in zip(views, near, wide):
+        low, _ = blur_norm(c, w ** 2, 6)              # the view's own tone wherever it has data
         lows.append(low); details.append(c - low)
-        soft.append(w ** 2); sharp.append(w ** 12)
+        soft.append(ww ** 2); sharp.append(wn ** 12)
     sw, hw = sum(soft), sum(sharp)
-    colour = sum(l * s[..., None] for l, s in zip(lows, soft)) / np.maximum(sw, 1e-9)[..., None]
+    colour = sum(l * s_[..., None] for l, s_ in zip(lows, soft)) / np.maximum(sw, 1e-9)[..., None]
     colour += sum(d * h[..., None] for d, h in zip(details, sharp)) / np.maximum(hw, 1e-12)[..., None]
-    confidence = np.clip(sum(w ** 4 for _, w in views) * 6, 0, 1)
+    views = [(c, w) for (c, _), w in zip(views, near)]
+    # Trust a view until it is nearly edge-on (cos 75 deg ~ .26 still counts for 2/3): each region already
+    # chose its view, so a weak-but-only source beats a blurred fill of its neighbours.
+    confidence = np.clip(sum(w for _, w in views) * 2.5, 0, 1)
     if hat:
         z_hat, hair = hat
         crown = (z > z_hat) & cover
@@ -297,11 +456,12 @@ def bake(src, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, hat=None
     return np.clip(push_pull(colour, confidence * cover), 0, 255).astype(np.uint8)
 
 
-def build(name, sheet, box, pts, backdrop=(255, 255, 255), tol=38, profile=None):
+def build(name, sheet, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, mapping=None, ear=None):
     """Bake one face and write assets/textures/face_<name>.png."""
     src = Image.open(HERE / "references" / f"{sheet}.png").convert("RGB")
     res = Image.fromarray(bake(src, tuple(box), pts, tuple(backdrop), tol, tuple(profile) if profile else None,
-                               HATS.get(name)))
+                               HATS.get(name), mapping if mapping is not None else mapping_for(name),
+                               ear))
     out = ROOT / "assets" / "textures"
     out.mkdir(parents=True, exist_ok=True)
     res.save(out / f"face_{name}.png")
@@ -310,10 +470,11 @@ def build(name, sheet, box, pts, backdrop=(255, 255, 255), tol=38, profile=None)
     return res
 
 
-def build_ref(name):
+def build_ref(name, mapping=None):
     ref = REFS[name]
     sheet, box, pts = ref[:3]
-    return build(name, sheet, box, pts, *ref[3:], profile=PROFILES.get(name))
+    return build(name, sheet, box, pts, *ref[3:], profile=PROFILES.get(name), mapping=mapping,
+                 ear=PROFILE_EARS.get(name))
 
 
 def legacy_to_new(old):

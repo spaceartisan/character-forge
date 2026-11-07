@@ -13,7 +13,7 @@ assert len(j['skins'])==1
 assert len(j['animations'])==13
 assert len(j['meshes'])==12
 assert {'rig'} <= set(n.get('name','') for n in j['nodes'])
-textures=list((r/'assets/textures').glob('face_*.png'))
+textures=[t for t in (r/'assets/textures').glob('face_*.png') if '.' not in t.stem]   # skip .prev / .512.bak copies
 assert len(textures)>=17, 'Missing included face textures'
 for t in textures:
     with Image.open(t) as im:
