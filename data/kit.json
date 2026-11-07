@@ -48,6 +48,14 @@
   "face": {
    "tex": "@face",
    "rough": 0.7
+  },
+  "tee": {
+   "tex": "@tee",
+   "rough": 0.85
+  },
+  "bottom": {
+   "tex": "@bottom",
+   "rough": 0.85
   }
  },
  "part_surfaces": {
@@ -105,5 +113,6 @@
   "sit",
   "cower",
   "cuffed"
- ]
+ ],
+ "_prints": "Character Forge additions: 'tee' (T-shirt, tank top) and 'bottom' (shorts, jeans) are print surfaces. Their texture is the character's chosen print (assets/textures/print_<id>.png), unwrapped front | back, tinted by the surface colour."
 }

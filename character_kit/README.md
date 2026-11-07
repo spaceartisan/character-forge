@@ -150,12 +150,15 @@ Textures painted for the old 512 px front projection are moved into the new layo
 | Legs | `legs_m`; `legs_coat` (trousers from mid-thigh down, worn under the trench coat) |
 | Outfit | `outfit_suit`, `outfit_trench`, `outfit_shirt`, `outfit_dress` |
 | Extras | `hat`, `hair_short`, `hair_long`, `glasses` |
+| Forge garments | `outfit_tshirt`, `outfit_tank` (bare arms; the tank also a skin torso under its armholes and neckline); `legs_shorts` (bare legs, sneakers), `legs_jeans` |
 
 **Surface (material) names are the contract.** `character.gd` dresses each surface by its name prefix:
 
 `face`, `skin`, `top`, `shirt`, `tie`, `pants`, `shoes`, `skirt`, `hat`, `band`, `hair`, `lens`
 
 A new garment must use these names, or `character.gd` must learn the new one. If you add or rename a mesh, update the show/hide logic in `character.gd` (`set_look`, `outfit_for`) to match.
+
+**Forge garments.** `blender_people.py` builds the T-shirt, tank top, shorts and jeans *after* the game's parts, so every earlier mesh comes out byte-identical (faces, touch-ups and saved shapes stay valid). They add two surfaces, `tee` and `bottom`, the Forge's print surfaces (`data/kit.json`): their pieces use `uv="wrap"`, which `wrap_uv` unwraps front | back (each triangle to the side its surface faces, projected straight on, one scale for the whole garment fitted to the texture). `write_templates` saves each garment's outline as `assets/textures/print_template_<part>.png`. The built-in prints (`print_cotton.png`, `print_twill.png`) come from `prints/make_builtin_prints.py`. The game's `character.gd` knows none of this; it's for the Forge and its exports.
 
 **Coordinates (Blender):**
 

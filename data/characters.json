@@ -1,7 +1,7 @@
 [
   {
     "id": "preset-0",
-    "preset_version": 2,
+    "preset_version": 3,
     "name": "The Pale Agent",
     "face": "agent",
     "body": "m",
@@ -15,6 +15,11 @@
       "top": "suitcloth",
       "pants": "suitcloth"
     },
+    "bottoms": "trousers",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "twill"
+    },
     "colors": {
       "skin": "#c2c9c1",
       "hair": "#332419",
@@ -26,12 +31,14 @@
       "skirt": "#664c4c",
       "hat": "#212125",
       "band": "#0d0d0e",
-      "glasses": "#080809"
+      "glasses": "#080809",
+      "tee": "#e6e3dc",
+      "bottom": "#3f4d66"
     }
   },
   {
     "id": "preset-1",
-    "preset_version": 2,
+    "preset_version": 3,
     "name": "Bureau Man",
     "face": "fed",
     "body": "m",
@@ -45,6 +52,11 @@
       "top": "cloth",
       "pants": "cloth"
     },
+    "bottoms": "trousers",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "twill"
+    },
     "colors": {
       "skin": "#6b4530",
       "hair": "#0f0d0d",
@@ -56,12 +68,14 @@
       "skirt": "#664c4c",
       "hat": "#80808a",
       "band": "#0d0d0e",
-      "glasses": "#080809"
+      "glasses": "#080809",
+      "tee": "#e6e3dc",
+      "bottom": "#3f4d66"
     }
   },
   {
     "id": "preset-2",
-    "preset_version": 2,
+    "preset_version": 3,
     "name": "Bureau Man in Trench",
     "face": "fed",
     "body": "m",
@@ -75,6 +89,11 @@
       "top": "cloth",
       "pants": "cloth"
     },
+    "bottoms": "trousers",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "twill"
+    },
     "colors": {
       "skin": "#6b4530",
       "hair": "#0f0d0d",
@@ -86,12 +105,14 @@
       "skirt": "#664c4c",
       "hat": "#9e8c6b",
       "band": "#0d0d0e",
-      "glasses": "#080809"
+      "glasses": "#080809",
+      "tee": "#e6e3dc",
+      "bottom": "#3f4d66"
     }
   },
   {
     "id": "preset-3",
-    "preset_version": 2,
+    "preset_version": 3,
     "name": "Townsman",
     "face": "m1",
     "body": "m",
@@ -105,6 +126,11 @@
       "top": "cloth",
       "pants": "cloth"
     },
+    "bottoms": "trousers",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "twill"
+    },
     "colors": {
       "skin": "#c9805e",
       "hair": "#33241a",
@@ -116,12 +142,14 @@
       "skirt": "#664c4c",
       "hat": "#212125",
       "band": "#0d0d0e",
-      "glasses": "#080809"
+      "glasses": "#080809",
+      "tee": "#e6e3dc",
+      "bottom": "#3f4d66"
     }
   },
   {
     "id": "preset-4",
-    "preset_version": 2,
+    "preset_version": 3,
     "name": "Deputy",
     "face": "m4",
     "body": "m",
@@ -135,6 +163,11 @@
       "top": "cloth",
       "pants": "cloth"
     },
+    "bottoms": "trousers",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "twill"
+    },
     "colors": {
       "skin": "#ab6942",
       "hair": "#120f0d",
@@ -146,12 +179,14 @@
       "skirt": "#664c4c",
       "hat": "#b2996b",
       "band": "#0d0d0e",
-      "glasses": "#080809"
+      "glasses": "#080809",
+      "tee": "#e6e3dc",
+      "bottom": "#3f4d66"
     }
   },
   {
     "id": "preset-5",
-    "preset_version": 2,
+    "preset_version": 3,
     "name": "Townswoman",
     "face": "f1",
     "body": "f",
@@ -165,6 +200,11 @@
       "top": "cloth",
       "pants": "cloth"
     },
+    "bottoms": "trousers",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "twill"
+    },
     "colors": {
       "skin": "#d68566",
       "hair": "#61381f",
@@ -176,7 +216,83 @@
       "skirt": "#335780",
       "hat": "#212125",
       "band": "#0d0d0e",
-      "glasses": "#080809"
+      "glasses": "#080809",
+      "tee": "#e6e3dc",
+      "bottom": "#3f4d66"
+    }
+  },
+  {
+    "id": "preset-6",
+    "preset_version": 3,
+    "name": "Day Off",
+    "face": "m2",
+    "body": "m",
+    "outfit": "tshirt",
+    "hair": "short",
+    "hat": false,
+    "glasses": false,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "suitcloth",
+      "pants": "suitcloth"
+    },
+    "bottoms": "shorts",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "cotton"
+    },
+    "colors": {
+      "skin": "#d69173",
+      "hair": "#2b1d14",
+      "top": "#212125",
+      "shirt": "#dbd9cc",
+      "tie": "#080809",
+      "pants": "#333338",
+      "shoes": "#e3e1da",
+      "skirt": "#664c4c",
+      "hat": "#212125",
+      "band": "#0d0d0e",
+      "glasses": "#080809",
+      "tee": "#b84a3a",
+      "bottom": "#c9b88f"
+    }
+  },
+  {
+    "id": "preset-7",
+    "preset_version": 3,
+    "name": "Roadie",
+    "face": "f3",
+    "body": "f",
+    "outfit": "tank",
+    "hair": "long",
+    "hat": false,
+    "glasses": true,
+    "animation": "idle",
+    "scale": 1,
+    "fabric": {
+      "top": "suitcloth",
+      "pants": "suitcloth"
+    },
+    "bottoms": "jeans",
+    "prints": {
+      "tee": "cotton",
+      "bottom": "twill"
+    },
+    "colors": {
+      "skin": "#a6613d",
+      "hair": "#1c120c",
+      "top": "#212125",
+      "shirt": "#dbd9cc",
+      "tie": "#080809",
+      "pants": "#333338",
+      "shoes": "#2b2b2b",
+      "skirt": "#664c4c",
+      "hat": "#212125",
+      "band": "#0d0d0e",
+      "glasses": "#080809",
+      "tee": "#2a2a2e",
+      "bottom": "#3f4d66"
     }
   }
 ]

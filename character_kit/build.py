@@ -13,7 +13,12 @@ import os, pathlib, shutil, subprocess, sys
 
 KIT = pathlib.Path(__file__).resolve().parent
 GAME = KIT.parent
-BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
+def _find_blender():
+    found = sorted(pathlib.Path(r"C:\Program Files\Blender Foundation").glob("Blender */blender.exe"), reverse=True)
+    return str(found[0]) if found else r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
+
+
+BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or _find_blender()
 GODOT = os.environ.get("GODOT", r"C:\Program Files\Godot\Godot_v4.7-stable_win64.exe\Godot_v4.7-stable_win64_console.exe")
 
 

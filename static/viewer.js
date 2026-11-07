@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { collectCharacterParts, applyCharacterParts } from './character-parts.mjs';
-import { PartShape, ShapeEditor } from './shape.js?v=2.8.3';
+import { PartShape, ShapeEditor } from './shape.js?v=2.9.0';
 
 export async function startViewer(stage, src, rules) {
   const scene = new THREE.Scene();
@@ -127,6 +127,7 @@ export async function startViewer(stage, src, rules) {
     if (tex === '@face') return faceOverride || '/textures/face_' + encodeURIComponent(cfg.face) + '.png';
     if (tex === '@top') tex = cfg.fabric?.top || 'cloth';
     if (tex === '@pants') tex = cfg.fabric?.pants || 'cloth';
+    if (tex === '@tee' || tex === '@bottom') return '/textures/print_' + encodeURIComponent(cfg.prints?.[tex.slice(1)] || 'cotton') + '.png';
     return '/materials/' + tex + '.png';
   }
 

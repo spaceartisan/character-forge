@@ -31,7 +31,7 @@ Open **http://127.0.0.1:8765**. `run.sh` offers the short version if your system
 ## UI workflow
 
 1. **Choose a face** from the left-hand gallery. The kit includes 17 existing face textures, including the pale agent and federal operative.
-2. **Customize appearance**: male/female body mesh, suit/trench/shirt/dress, no/short/long hair, fedora, glasses and model height multiplier.
+2. **Customize appearance**: male/female body mesh, suit/trench/shirt/dress/T-shirt/tank top, trousers/shorts/jeans, prints, no/short/long hair, fedora, glasses and model height multiplier.
 3. **Choose surface colors** under `MATERIALS`; these are stored in the exported glTF materials (not just a browser-only preview).
 4. **Preview animations** under `MOTION`. All 13 original named animations are preserved in GLB exports.
 5. **Save character** to the local project library, then use **Export model** to download a rigged GLB or Godot-ready ZIP.
@@ -52,6 +52,21 @@ Use **Import a new face**, choose an image, then:
 - **Mannequin head** is a ready-made base shape: a faceless egg head modelled in Blender (`character_kit/heads/mannequin_head.blend`). Pick the **Mannequin** face (plain, no painted features) and **Base shape › Mannequin head**, and turn hair, hat and glasses off. Any painted face works on it too: the shape carries its own face mapping, so eyes, nose and mouth land where they should on the new head. To change it, sculpt the .blend and re-run `conform_head.py` (see `character_kit/README.md`, *Heads from Blender*).
 
 The original painted eyes and expressions are 2D face textures projected onto an existing 3D head. This does not automatically reconstruct a unique head mesh or a fully sculpted likeness from the reference. The original source kit notes that the common head shape works better than its earlier per-person head deformations.
+
+### Wardrobe and prints
+
+Besides the kit's suit, trench coat, shirt and dress, the Forge adds a **T-shirt** and a **Tank top** (with bare arms) and, under **Bottoms**, **Shorts** (with bare legs and sneakers) and **Jeans** next to the kit's trousers. Bottoms go with any outfit except the trench coat and the dress, which come with their own legs.
+
+These four garments are unwrapped like the face: one picture wraps the whole garment, its **left half the front** (as seen from the front) and its **right half the back** (as seen from behind). Under Wardrobe › Prints, **Top print** dresses the T-shirt or tank top and **Bottom print** the shorts or jeans; *Plain cotton* and *Twill* are built in, and the garment's colour (Materials › T-shirt / tank top, Shorts / jeans) tints whichever print is on.
+
+**Import a print** takes a PNG, JPEG or WebP and puts it on one of four ways:
+
+- **Front and back**: the picture on the front and the same on the back, the rest of the garment in the picture's border colour.
+- **Front only**: the picture on the front, the back plain.
+- **Whole wrap**: the picture is the garment's whole layout, as drawn on a template. The templates (`assets/textures/print_template_<garment>.png`, linked in the dialog) show each garment's front and back outline; paint or place artwork over them and import the result.
+- **Repeating pattern**: tiled all over, about 8 times across.
+
+Prints are saved as `assets/textures/print_<id>.png` (2048 × 2048) and listed in `data/prints.json`; the dialog also deletes them. Importing sets the garment's colour to white so the picture shows true; the export embeds the print like the face texture.
 
 ### Exported model contents
 

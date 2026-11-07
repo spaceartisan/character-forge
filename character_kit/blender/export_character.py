@@ -6,6 +6,7 @@ and unselected objects change. No third-party Blender add-ons required.
 import bpy
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -22,14 +23,17 @@ bpy.ops.import_scene.gltf(filepath=str(base))
 sex = cfg.get('body', 'm')
 outfit = cfg.get('outfit', 'suit')
 hair = cfg.get('hair', 'short')
+bottoms = cfg.get('bottoms', 'trousers')
 if sex not in ('m','f'): raise ValueError('Invalid body')
-if outfit not in ('suit','trench','shirt','dress'): raise ValueError('Invalid outfit')
+if outfit not in ('suit','trench','shirt','dress','tshirt','tank'): raise ValueError('Invalid outfit')
+if bottoms not in ('trousers','shorts','jeans'): raise ValueError('Invalid bottoms')
 if hair not in ('none','short','long'): raise ValueError('Invalid hairstyle')
 # Same rule as the game (character.gd) and static/character-parts.mjs: the dress has its own
-# legs and shoes, so no legs mesh goes under it; the trench wears legs_coat.
+# legs and shoes, so no legs mesh goes under it; the trench wears legs_coat; anything else the chosen
+# bottoms (the Forge's shorts and jeans, or the kit's trousers).
 keep = {f'person_{sex}', f'outfit_{outfit}'}
 if outfit == 'trench': keep.add('legs_coat')
-elif outfit != 'dress': keep.add('legs_m')
+elif outfit != 'dress': keep.add({'trousers': 'legs_m', 'shorts': 'legs_shorts', 'jeans': 'legs_jeans'}[bottoms])
 if hair != 'none': keep.add('hair_'+hair)
 if cfg.get('hat'): keep.add('hat')
 if cfg.get('glasses'): keep.add('glasses')
@@ -115,6 +119,7 @@ def linear_rgb(value, fallback):
 rules = cfg['rules']
 colors = cfg.get('colors') or {}
 fabric = cfg.get('fabric') or {}
+prints = cfg.get('prints') or {}
 face_id = cfg.get('face', 'agent')
 if not isinstance(face_id,str) or not face_id.replace('_','').isalnum():
     raise ValueError('Invalid face id')
@@ -125,6 +130,11 @@ images = {}
 def image_for(tex):
     """Texture name from the rules -> packed Blender image (each file loaded once)."""
     if tex == '@face': path = face_file
+    elif tex in ('@tee', '@bottom'):   # the Forge's print surfaces
+        pid = prints.get(tex[1:], 'cotton')
+        if not isinstance(pid, str) or not re.fullmatch(r'[a-z0-9_]{1,40}', pid): raise ValueError('Invalid print id')
+        path = root/'assets'/'textures'/f'print_{pid}.png'
+        if not path.is_file(): raise RuntimeError('Missing print texture: '+str(path))
     else:
         if tex == '@top': tex = fabric.get('top', 'cloth')
         elif tex == '@pants': tex = fabric.get('pants', 'cloth')
@@ -173,6 +183,9 @@ for obj in bpy.data.objects:
     for slot in obj.material_slots:
         if not slot.material: continue
         surface = slot.material.name.split('.')[0]
+        # build_material renamed the first part's source material to '<surface>_source'; later parts
+        # sharing that surface (hands and bare arms are both 'skin') still point at it.
+        if surface.endswith('_source'): surface = surface[:-len('_source')]
         rule = part_rule or rules['surfaces'].get(surface)
         if not rule: continue
         # Glasses share the 'tie' slot with the suit in the source file; give them their own material.

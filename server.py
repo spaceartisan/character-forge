@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from PIL import Image
+import numpy as np
 
 ROOT = Path(__file__).resolve().parent
 KIT = ROOT / 'character_kit'
@@ -47,6 +48,7 @@ app.mount('/references', StaticFiles(directory=REF_DIR), name='references')
 
 PRESET_FILE = DATA/'characters.json'
 SHAPES_FILE = DATA/'shapes.json'   # saved base shapes: geometry edits any character can start from
+PRINTS_FILE = DATA/'prints.json'   # imported prints for the wrap-unwrapped garments (textures/print_<id>.png)
 CUSTOM_FILE = DATA/'custom_faces.json'
 SOURCES_FILE = DATA/'sources.json'
 
@@ -61,7 +63,11 @@ FACE_NAMES = {
 # Dressing rules shared by the viewer and the Blender export (copied from the game's character.gd).
 RULES = json.loads((DATA/'kit.json').read_text(encoding='utf-8'))
 FABRICS = tuple(RULES['fabrics'])
-OUTFITS = ('suit','trench','shirt','dress')
+OUTFITS = ('suit','trench','shirt','dress','tshirt','tank')
+BOTTOMS = ('trousers','shorts','jeans')   # worn with any outfit but the trench and the dress (their own legs)
+BUILTIN_PRINTS = [{'id':'cotton','name':'Plain cotton','builtin':True},{'id':'twill','name':'Twill','builtin':True}]
+PRINT_SIZE = 2048
+PRINT_MODES = ('both','front','wrap','pattern')
 HAIRS = ('none','short','long')
 
 # Colours are tints multiplied over the kit's cloth/skin/rubber textures, exactly as in the game.
@@ -70,11 +76,13 @@ DEFAULTS = {
     'name':'The Pale Agent', 'face':'agent', 'body':'m', 'outfit':'suit',
     'hair':'none', 'hat':True, 'glasses':True, 'animation':'idle','scale':1,
     'fabric':{'top':'suitcloth','pants':'suitcloth'},
+    'bottoms':'trousers', 'prints':{'tee':'cotton','bottom':'twill'},
     'colors':{
         'skin':'#c2c9c1', 'hair':'#332419', 'top':'#212125',
         'shirt':'#dbd9cc', 'tie':'#080809', 'pants':'#333338',
         'shoes':'#4c4c4c', 'skirt':'#664c4c','hat':'#212125',
-        'band':'#0d0d0e','glasses':'#080809'
+        'band':'#0d0d0e','glasses':'#080809',
+        'tee':'#e6e3dc', 'bottom':'#5f76a0'
     }
 }
 SEEDS = [
@@ -91,6 +99,12 @@ SEEDS = [
         'colors':{**DEFAULTS['colors'],'skin':'#ab6942','hair':'#120f0d','top':'#80704a','pants':'#4c422e','shoes':'#664733','hat':'#b2996b'}},
     {**DEFAULTS,'name':'Townswoman','face':'f1','body':'f','outfit':'dress','hair':'long','hat':False,'glasses':False,'fabric':{'top':'cloth','pants':'cloth'},
         'colors':{**DEFAULTS['colors'],'skin':'#d68566','hair':'#61381f','top':'#6b4c75','skirt':'#335780','shoes':'#664733'}},
+    {**DEFAULTS,'name':'Day Off','face':'m2','outfit':'tshirt','bottoms':'shorts','hair':'short','hat':False,'glasses':False,
+        'prints':{'tee':'cotton','bottom':'cotton'},
+        'colors':{**DEFAULTS['colors'],'skin':'#d69173','hair':'#2b1d14','tee':'#b84a3a','bottom':'#c9b88f','shoes':'#e3e1da'}},
+    {**DEFAULTS,'name':'Roadie','face':'f3','body':'f','outfit':'tank','bottoms':'jeans','hair':'long','hat':False,'glasses':True,
+        'prints':{'tee':'cotton','bottom':'twill'},
+        'colors':{**DEFAULTS['colors'],'skin':'#a6613d','hair':'#1c120c','tee':'#2a2a2e','bottom':'#5f76a0','shoes':'#2b2b2b'}},
 ]
 
 def read_json(path, default):
@@ -132,7 +146,7 @@ def face_meta(name):
         'custom':name not in face_pipeline.REFS,
     }
 
-PRESET_VERSION = 2   # bump to refresh the built-in presets; the user's own characters are kept
+PRESET_VERSION = 3   # bump to refresh the built-in presets; the user's own characters are kept
 
 def upgrade_face_textures():
     """Custom faces made before the wrapped 1024 layout: rebake from their saved Face Lab settings, or else
@@ -194,7 +208,9 @@ def catalog():
         'blender_available':bool(blender_path()),
         'model_available':(MODELS/'human.glb').is_file(),
         'animations':['idle','still','walk','run','agent_walk','talk','phone','sit','cower','reach','cuffed','cast','dead'],
-        'outfits':['suit','trench','shirt','dress'],
+        'outfits':list(OUTFITS),
+        'bottoms':list(BOTTOMS),
+        'prints':all_prints(),
         # Versioned by file time so a rebuilt model is never served from the browser cache.
         'base_model':'/models/human.glb?v='+str(int((MODELS/'human.glb').stat().st_mtime)) if (MODELS/'human.glb').is_file() else '/models/human.glb',
         'starter':DEFAULTS,
@@ -408,6 +424,78 @@ def save_shape(body:ShapeWrite):
     write_json(SHAPES_FILE,shapes[:200])
     return {'shape':item,'shapes':shapes[:200]}
 
+# ---- Prints: pictures wrapped onto the T-shirt, tank top, shorts and jeans --------------------------------
+# Those garments are unwrapped front | back (blender_people.py wrap_uv): the left half of a print is the
+# garment's front as seen from the front, the right half its back as seen from behind. Templates showing
+# each garment's outline are in textures/print_template_<part>.png.
+def print_exists(pid):
+    return isinstance(pid,str) and re.fullmatch(r'[a-z0-9_]{1,40}',pid) is not None and (TEXTURES/f'print_{pid}.png').is_file()
+
+def all_prints():
+    custom=[{**p,'texture':f"/textures/print_{p['id']}.png"} for p in read_json(PRINTS_FILE,[]) if print_exists(p.get('id'))]
+    return [{**p,'texture':f"/textures/print_{p['id']}.png"} for p in BUILTIN_PRINTS]+custom
+
+def edge_colour(img):
+    """The picture's border colour (median of its edge pixels): fills the garment around a placed picture."""
+    a=np.asarray(img.convert('RGB'))
+    edge=np.concatenate([a[0],a[-1],a[:,0],a[:,-1]])
+    return tuple(int(v) for v in np.median(edge,axis=0))
+
+def contain(img,w,h):
+    """Scaled to fit inside w x h, keeping its shape."""
+    k=min(w/img.width,h/img.height)
+    return img.resize((max(1,round(img.width*k)),max(1,round(img.height*k))),Image.LANCZOS)
+
+def compose_print(img,mode):
+    S=PRINT_SIZE
+    img=img.convert('RGB')
+    if mode=='wrap':                       # drawn on a template: used as it is
+        return img.resize((S,S),Image.LANCZOS)
+    if mode=='pattern':                    # repeated, about 8 times across the garment
+        tile=contain(img,S//8,S//8) if max(img.size)>S//8 else img
+        out=Image.new('RGB',(S,S))
+        for x in range(0,S,tile.width):
+            for y in range(0,S,tile.height): out.paste(tile,(x,y))
+        return out
+    out=Image.new('RGB',(S,S),edge_colour(img))
+    pic=contain(img,int(S/2*.82),int(S*.82))
+    for half in ((0,) if mode=='front' else (0,S//2)):
+        out.paste(pic,(half+(S//2-pic.width)//2,(S-pic.height)//2))
+    return out
+
+class PrintWrite(BaseModel):
+    name:str
+    mode:str='both'
+    image:str                              # data URL (PNG, JPEG or WebP)
+
+@app.post('/api/prints')
+def add_print(body:PrintWrite):
+    if body.mode not in PRINT_MODES: raise HTTPException(400,'Unknown print layout')
+    m=re.fullmatch(r'data:image/(png|jpeg|jpg|webp);base64,(.+)',body.image.strip(),re.S)
+    if not m: raise HTTPException(400,'Send a PNG, JPEG or WebP image')
+    try: raw=base64.b64decode(m.group(2),validate=True)
+    except ValueError: raise HTTPException(400,'The image data is damaged')
+    if len(raw)>25*1024*1024: raise HTTPException(400,'Image too large (25 MB at most)')
+    try:
+        img=Image.open(io.BytesIO(raw)); img.load()
+    except Exception: raise HTTPException(400,'That file could not be read as an image')
+    if img.width*img.height>64_000_000: raise HTTPException(400,'Image too large')
+    pid='p'+uuid.uuid4().hex[:10]
+    compose_print(img,body.mode).save(TEXTURES/f'print_{pid}.png',optimize=True)
+    item={'id':pid,'name':(body.name.strip() or 'Print')[:60],'mode':body.mode,'created':time.strftime('%Y-%m-%d %H:%M')}
+    prints=read_json(PRINTS_FILE,[]); prints.insert(0,item); write_json(PRINTS_FILE,prints)
+    return {'print':{**item,'texture':f'/textures/print_{pid}.png'},'prints':all_prints()}
+
+@app.delete('/api/prints/{print_id}')
+def delete_print(print_id:str):
+    prints=read_json(PRINTS_FILE,[])
+    left=[p for p in prints if p.get('id')!=print_id]
+    if len(left)==len(prints): raise HTTPException(404,'No such print (the built-in ones stay)')
+    write_json(PRINTS_FILE,left)
+    f=TEXTURES/f'print_{print_id}.png'
+    if re.fullmatch(r'p[a-f0-9]{10}',print_id) and f.is_file(): f.unlink()
+    return {'prints':all_prints()}
+
 @app.delete('/api/shapes/{shape_id}')
 def delete_shape(shape_id:str):
     shapes=read_json(SHAPES_FILE,[])
@@ -439,7 +527,8 @@ def delete_preset(preset_id:str):
 def normalize_character(p):
     if not isinstance(p,dict): raise HTTPException(400,'Invalid character')
     cfg={**DEFAULTS,**p}
-    for k,allowed in [('body',('m','f')),('outfit',OUTFITS),('hair',HAIRS)]:
+    if cfg.get('bottoms') is None: cfg['bottoms']='trousers'
+    for k,allowed in [('body',('m','f')),('outfit',OUTFITS),('hair',HAIRS),('bottoms',BOTTOMS)]:
         if cfg[k] not in allowed: raise HTTPException(400,f'Invalid {k}')
     if not re.fullmatch(r'[a-z][a-z0-9_]{0,20}',str(cfg.get('face',''))): raise HTTPException(400,'Invalid face')
     if not (TEXTURES/f"face_{cfg['face']}.png").is_file(): raise HTTPException(400,'Face texture missing')
@@ -456,8 +545,10 @@ def normalize_character(p):
     if 'lens' in given and 'glasses' not in given: colors['glasses']=given['lens']  # v1.1 name
     cfg['colors']={k:(colors[k] if isinstance(colors[k],str) and re.fullmatch('#[a-fA-F0-9]{6}',colors[k]) else v)
                    for k,v in DEFAULTS['colors'].items()}
+    prints={**DEFAULTS['prints'],**(cfg.get('prints') if isinstance(cfg.get('prints'),dict) else {})}
+    cfg['prints']={k:(prints[k] if print_exists(prints[k]) else v) for k,v in DEFAULTS['prints'].items()}
     cfg['shape']=clean_shape(cfg.get('shape'))
-    out={k:cfg[k] for k in ('name','face','body','outfit','hair','hat','glasses','scale','animation','fabric','colors')}
+    out={k:cfg[k] for k in ('name','face','body','outfit','bottoms','hair','hat','glasses','scale','animation','fabric','prints','colors')}
     if cfg['shape']:
         out['shape']=cfg['shape']
         base=cfg.get('shape_base')
@@ -465,7 +556,7 @@ def normalize_character(p):
     return out
 
 SHAPE_PARTS = {'person_m','person_f','legs_m','legs_coat','outfit_suit','outfit_trench','outfit_shirt','outfit_dress',
-               'hair_short','hair_long','hat','glasses'}
+               'hair_short','hair_long','hat','glasses','outfit_tshirt','outfit_tank','legs_shorts','legs_jeans'}
 def clean_shape(shape):
     """Mesh edits made in the Forge: {part: [[x, y, z, dx, dy, dz], ...]}, where x, y, z is a vertex's original
     position in the part's glTF mesh space and dx, dy, dz how far it moved (metres). A row can end with
