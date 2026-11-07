@@ -56,7 +56,7 @@
     <div class="tab-row"><button class="tab active" data-tab="appearance">APPEARANCE</button><button class="tab" data-tab="materials">MATERIALS</button><button class="tab" data-tab="motion">MOTION</button></div>
     <div class="inspector-scroll">
      <div class="tab-page active" data-page="appearance">
-      <div class="edit-section"><div class="section-title"><span>01</span><h3>Body type</h3></div><div class="segment" id="bodyType"><button class="active" data-body="m"><span class="person-icon">♟</span> Masculine</button><button data-body="f"><span class="person-icon">♟</span> Feminine</button></div><p class="hint">Uses the kit's original male or female mesh and shared armature.</p></div>
+      <div class="edit-section"><div class="section-title"><span>01</span><h3>Body type</h3></div><div class="segment" id="bodyType"><button class="active" data-body="m"><span class="person-icon">♟</span> Masculine</button><button data-body="f"><span class="person-icon">♟</span> Feminine</button></div><p class="hint">Uses the kit's original male or female mesh and shared armature.</p><label class="base-shape">Base shape <select id="baseShape"><option value="">Kit default (human.glb)</option></select></label><p class="hint" id="baseShapeHint"></p></div>
       <div class="edit-section"><div class="section-title"><span>02</span><h3>Wardrobe</h3></div><div class="outfit-grid" id="outfitGrid"><button data-outfit="suit"><span class="outfit-icon">♢</span><strong>Tailored suit</strong></button><button data-outfit="trench" class="active"><span class="outfit-icon">▤</span><strong>Trench coat</strong></button><button data-outfit="shirt"><span class="outfit-icon">≋</span><strong>Casual shirt</strong></button><button data-outfit="dress"><span class="outfit-icon">♧</span><strong>Dress</strong></button></div></div>
       <div class="edit-section"><div class="section-title"><span>03</span><h3>Hair style</h3></div><div class="style-grid" id="hairGrid"><button data-hair="none" class="active"><span class="hair-icon">○</span>None</button><button data-hair="short"><span class="hair-icon">◠</span>Short</button><button data-hair="long"><span class="hair-icon">◡</span>Long</button></div></div>
       <div class="edit-section"><div class="section-title"><span>04</span><h3>Accessories</h3></div><label class="toggle-row"><span class="toggle-glyph">▱</span><span class="toggle-text"><strong>Fedora hat</strong><small>Period-correct brim</small></span><input type="checkbox" id="hatToggle"><span class="toggle"></span></label><label class="toggle-row"><span class="toggle-glyph">⌐</span><span class="toggle-text"><strong>Dark glasses</strong><small>Frame with lenses</small></span><input type="checkbox" id="glassesToggle"><span class="toggle"></span></label></div>
@@ -73,6 +73,6 @@
 </div>
 <div id="modalBackdrop" class="modal-backdrop hidden" aria-hidden="true"><div class="modal" id="dialogContent"></div></div>
 <div id="toast" class="toast" role="status"></div>
-<script type="module" src="/static/app.js?v=2.5.1"></script>
+<script type="module" src="/static/app.js?v=2.6.0"></script>
 </body>
 </html>

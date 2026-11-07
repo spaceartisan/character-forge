@@ -45,6 +45,7 @@ app.mount('/materials', StaticFiles(directory=ROOT/'assets'/'materials'), name='
 app.mount('/references', StaticFiles(directory=REF_DIR), name='references')
 
 PRESET_FILE = DATA/'characters.json'
+SHAPES_FILE = DATA/'shapes.json'   # saved base shapes: geometry edits any character can start from
 CUSTOM_FILE = DATA/'custom_faces.json'
 SOURCES_FILE = DATA/'sources.json'
 
@@ -187,6 +188,7 @@ def catalog():
     return {
         'faces':faces,
         'presets':read_json(PRESET_FILE,[]),
+        'shapes':read_json(SHAPES_FILE,[]),
         'sources':read_json(SOURCES_FILE,{}),
         'blender_available':bool(blender_path()),
         'model_available':(MODELS/'human.glb').is_file(),
@@ -388,6 +390,31 @@ def clear_face_paint(face_id:str):
     f['texture']+='?v='+str(int(time.time()*1000))
     return {'ok':True,'face':f,'backup':f'face_{face_id}.prev.png'}
 
+# ---- Base shapes: a character's geometry edits saved by name, for other characters to start from
+class ShapeWrite(BaseModel):
+    name:str
+    shape:dict
+
+@app.post('/api/shapes')
+def save_shape(body:ShapeWrite):
+    shape=clean_shape(body.shape)
+    if not shape: raise HTTPException(400,'There are no shape edits to save')
+    name=re.sub(r'\s+',' ',body.name).strip()[:60] or 'Shape'
+    shapes=read_json(SHAPES_FILE,[])
+    item={'id':'shape_'+uuid.uuid4().hex[:10],'name':name,'parts':sorted(shape),'vertices':sum(len(r) for r in shape.values()),
+          'created':time.strftime('%Y-%m-%d %H:%M'),'shape':shape}
+    shapes.insert(0,item)
+    write_json(SHAPES_FILE,shapes[:200])
+    return {'shape':item,'shapes':shapes[:200]}
+
+@app.delete('/api/shapes/{shape_id}')
+def delete_shape(shape_id:str):
+    shapes=read_json(SHAPES_FILE,[])
+    left=[s for s in shapes if s.get('id')!=shape_id]
+    if len(left)==len(shapes): raise HTTPException(404,'No such shape')
+    write_json(SHAPES_FILE,left)
+    return {'shapes':left}
+
 class PresetWrite(BaseModel):
     character:dict
 
@@ -430,7 +457,10 @@ def normalize_character(p):
                    for k,v in DEFAULTS['colors'].items()}
     cfg['shape']=clean_shape(cfg.get('shape'))
     out={k:cfg[k] for k in ('name','face','body','outfit','hair','hat','glasses','scale','animation','fabric','colors')}
-    if cfg['shape']: out['shape']=cfg['shape']
+    if cfg['shape']:
+        out['shape']=cfg['shape']
+        base=cfg.get('shape_base')
+        if isinstance(base,str) and re.fullmatch(r'shape_[a-f0-9]{10}',base): out['shape_base']=base
     return out
 
 SHAPE_PARTS = {'person_m','person_f','legs_m','legs_coat','outfit_suit','outfit_trench','outfit_shirt','outfit_dress',

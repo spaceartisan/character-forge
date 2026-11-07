@@ -19,7 +19,7 @@ function chooseFace(id){const f=faceById(id);if(!f)return;if(paintFace&&paintFac
 chosen.name=f.name;syncControls();dirty();updateHeadPath()}
 function faceResults(){const q=$('#faceSearch').value.trim().toLowerCase();return catalog.faces.filter(f=>{const filter=activeFaceFilter==='all'||(activeFaceFilter==='custom'?f.custom:f.body===activeFaceFilter);return filter&&(`${f.name} ${f.id}`).toLowerCase().includes(q)})}
 function renderFaceGrid(){if(!catalog)return;let list=faceResults();$('#faceCount').textContent=catalog.faces.length;$('#faceGrid').innerHTML=list.map(f=>`<button class="face-tile ${f.id===chosen.face?'active':''}" data-face="${safeText(f.id)}" title="${safeText(f.name)}"><img loading="lazy" src="${safeText(f.texture)}" alt="${safeText(f.name)}"><span class="tile-label">${safeText(f.name)}</span><span class="tile-id">${safeText(f.id)} ${f.custom?'· CUSTOM':''}</span></button>`).join('')||'<div class="loading-cards">No matching faces.</div>'; $$('.face-tile').forEach(t=>t.addEventListener('click',()=>chooseFace(t.dataset.face)));}
-function syncControls(){
+function syncControls(){renderBaseShape();
  $('#characterName').textContent=chosen.name;
  $('#crumbName').textContent=chosen.name;
  $('#hatToggle').checked=chosen.hat;$('#glassesToggle').checked=chosen.glasses;
@@ -101,7 +101,7 @@ async function openPaintPanel(){
  if(!viewer)return toast('The 3D view is not ready',true);
  closeMapPanel();closeShapePanel();
  try{
-  paintMod=paintMod||await import('/static/painter.js?v=2.5.1');
+  paintMod=paintMod||await import('/static/painter.js?v=2.6.0');
   if(!painter)painter=new paintMod.FacePainter(viewer,$('#stage'),{onChange:renderPaintPanel,onPick:()=>{if(painter.tool==='pick')painter.tool='paint'}});
   paintFace=chosen.face;setStatus('LOADING FACE '+paintFace.toUpperCase()+' FOR TOUCH-UPS…');
   await painter.start(paintFace);
@@ -167,7 +167,7 @@ function openShapePanel(){
  if(!viewer)return toast('The 3D view is not ready',true);
  if(paintFace&&!closePaintPanel())return;
  closeMapPanel();
- shapeEd=viewer.startEdit({onChange:renderShapePanel,onEdit:(part,rows)=>{chosen.shape={...(chosen.shape||{})};if(rows.length)chosen.shape[part]=rows;else delete chosen.shape[part];if(!Object.keys(chosen.shape).length)delete chosen.shape;dirty()}});
+ shapeEd=viewer.startEdit({onChange:renderShapePanel,onEdit:(part,rows)=>{chosen.shape={...(chosen.shape||{})};if(rows.length)chosen.shape[part]=rows;else delete chosen.shape[part];if(!Object.keys(chosen.shape).length){delete chosen.shape;delete chosen.shape_base}dirty();renderBaseShape()}});
  $('#editShape').classList.add('active');$('#editShape').setAttribute('aria-expanded','true');
  setStatus('EDIT SHAPE: CLICK THE MODEL TO SELECT, G TO MOVE');
  renderShapePanel();
@@ -196,9 +196,16 @@ function renderShapePanel(){
  <div class="map-actions paint-history"><button class="btn btn-ghost small" id="shapeUndo" ${E.undo.length?'':'disabled'} title="Ctrl+Z">Undo</button><button class="btn btn-ghost small" id="shapeRedo" ${E.redo.length?'':'disabled'} title="Ctrl+Shift+Z">Redo</button></div>
  <div class="map-actions"><button class="btn btn-ghost small" id="shapeResetPart" ${part&&edited.includes(part)?'':'disabled'}>Reset this part</button><button class="btn btn-ghost small" id="shapeResetAll" ${edited.length?'':'disabled'}>Reset all</button></div>
  <p class="map-note">Edits belong to this character: <strong>Save character</strong> keeps them and the exported GLB includes them.${edited.length?' Edited: '+edited.map(x=>safeText(PART_LABEL[x]||x)).join(', ')+'.':''}</p>
+ <div class="shape-library"><h4>Base shapes</h4>
+ <p class="map-note">Save this character's edits as a base shape to start other characters from it (Customize › Body type).</p>
+ <div class="shape-save"><input id="shapeSaveName" maxlength="60" placeholder="Name, e.g. Heavy brow"><button class="btn btn-accent small" id="shapeSave" ${chosen.shape?'':'disabled'}>Save</button></div>
+ ${(catalog.shapes||[]).length?`<ul class="shape-list">${catalog.shapes.map(x=>`<li class="${chosen.shape_base===x.id?'current':''}"><span><strong>${safeText(x.name)}</strong><small>${x.vertices} vertices · ${x.parts.map(q=>safeText(PART_LABEL[q]||q)).join(', ')}</small></span><button class="link-btn" data-use-shape="${safeText(x.id)}">${chosen.shape_base===x.id?'In use':'Use'}</button><button class="link-btn danger" data-del-shape="${safeText(x.id)}" aria-label="Delete ${safeText(x.name)}">Delete</button></li>`).join('')}</ul>`:'<p class="map-note">No saved shapes yet.</p>'}</div>
  <p class="map-note paint-keys">Keys: 1 2 3 vertex / edge / face · G move · X Y Z axis · Esc clear · Ctrl+Z undo</p>`;
  el.classList.remove('hidden');
  $('#shapeClose').onclick=closeShapePanel;
+ $('#shapeSave').onclick=saveBaseShape;$('#shapeSaveName').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();saveBaseShape()}};
+ $$('#shapePanel [data-use-shape]').forEach(b=>b.onclick=()=>useBaseShape(b.dataset.useShape));
+ $$('#shapePanel [data-del-shape]').forEach(b=>b.onclick=()=>deleteBaseShape(b.dataset.delShape));
  $$('#shapePanel [data-smode]').forEach(b=>b.onclick=()=>{E.mode=b.dataset.smode;renderShapePanel()});
  $('#shapeGrow').onclick=()=>E.grow();$('#shapeClear').onclick=()=>E.select(null);
  $('#shapeMove').onclick=()=>{const r=$('#stage').getBoundingClientRect();E.mouse??={clientX:r.left+r.width/2,clientY:r.top+r.height/2};E.startGrab()};
@@ -208,7 +215,43 @@ function renderShapePanel(){
  $('#shapeSoft').oninput=e=>{E.soft=Number(e.target.value);e.target.parentElement.querySelector('strong').textContent=E.soft?E.soft+' mm':'off'};
  $('#shapeUndo').onclick=()=>E.undoStep();$('#shapeRedo').onclick=()=>E.redoStep();
  $('#shapeResetPart').onclick=()=>E.resetPart();
- $('#shapeResetAll').onclick=()=>{if(!confirm('Undo every shape edit on this character?'))return;delete chosen.shape;dirty();E.forget()};
+ $('#shapeResetAll').onclick=()=>{if(!confirm('Undo every shape edit on this character (back to the kit default)?'))return;delete chosen.shape;delete chosen.shape_base;dirty();E.forget();renderBaseShape()};
+}
+// Base shapes: a character's geometry edits saved by name, for other characters to start from.
+const shapeJSON=x=>JSON.stringify(x||{});
+function baseShapeState(){
+ const base=(catalog.shapes||[]).find(x=>x.id===chosen.shape_base);
+ if(!chosen.shape)return{base:null,edited:false};
+ if(!base)return{base:null,edited:true};
+ return{base,edited:shapeJSON(base.shape)!==shapeJSON(chosen.shape)};
+}
+function renderBaseShape(){
+ const sel=$('#baseShape');if(!sel||!catalog)return;
+ const {base,edited}=baseShapeState(),shapes=catalog.shapes||[];
+ sel.innerHTML=`<option value="">Kit default (human.glb)</option>${shapes.map(x=>`<option value="${safeText(x.id)}">${safeText(x.name)}</option>`).join('')}${chosen.shape&&!base?'<option value="@custom">Custom edits (not saved as a shape)</option>':''}`;
+ sel.value=base?base.id:chosen.shape?'@custom':'';
+ $('#baseShapeHint').textContent=!chosen.shape?'The kit\'s geometry, unchanged. Save shapes from Edit shape to reuse them here.':base?(edited?`Starts from "${base.name}", with further edits on this character.`:`Uses the saved shape "${base.name}".`):'This character has its own shape edits. Save them as a base shape in Edit shape to reuse them.';
+}
+function useBaseShape(id){
+ const item=(catalog.shapes||[]).find(x=>x.id===id);
+ const {base,edited}=baseShapeState();
+ if(chosen.shape&&(edited||!base)&&!confirm(item?`Replace this character's shape edits with "${item.name}"?`:'Remove all shape edits from this character?'))return renderBaseShape();
+ if(item){chosen.shape=structuredClone(item.shape);chosen.shape_base=item.id}else{delete chosen.shape;delete chosen.shape_base}
+ shapeEd?.forget();dirty();renderBaseShape();renderShapePanel();
+ setStatus(item?'BASE SHAPE: '+item.name.toUpperCase():'BASE SHAPE: KIT DEFAULT');
+}
+async function saveBaseShape(){
+ const input=$('#shapeSaveName'),name=(input?.value||'').trim();
+ if(!chosen.shape)return toast('Edit the shape first, then save it',true);
+ if(!name){input?.focus();return toast('Give the shape a name',true)}
+ try{const r=await api('/api/shapes',{method:'POST',body:JSON.stringify({name,shape:chosen.shape})});catalog.shapes=r.shapes;chosen.shape_base=r.shape.id;renderBaseShape();renderShapePanel();toast(`Saved base shape "${r.shape.name}". Any character can now start from it under Body type.`)}
+ catch(e){toast(e.message,true)}
+}
+async function deleteBaseShape(id){
+ const item=(catalog.shapes||[]).find(x=>x.id===id);if(!item)return;
+ if(!confirm(`Delete the saved shape "${item.name}"? Characters already using it keep their own copy of the edits.`))return;
+ try{const r=await api('/api/shapes/'+encodeURIComponent(id),{method:'DELETE'});catalog.shapes=r.shapes;if(chosen.shape_base===id)delete chosen.shape_base;renderBaseShape();renderShapePanel()}
+ catch(e){toast(e.message,true)}
 }
 function setTab(t){activeTab=t;$$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));$$('.tab-page').forEach(x=>x.classList.toggle('active',x.dataset.page===t))}
 function setupControls(){
@@ -229,6 +272,7 @@ function setupControls(){
  $('#openFaceTexture').onclick=openFaceTexture;
  $('#mapSources').onclick=()=>mapState?closeMapPanel():openMapPanel();
  $('#touchUp').onclick=()=>paintFace?closePaintPanel():openPaintPanel();
+ $('#baseShape').onchange=e=>useBaseShape(e.target.value);
  $('#editShape').onclick=()=>shapeEd?.active?closeShapePanel():openShapePanel();
  window.addEventListener('beforeunload',e=>{if(painter?.active&&painter.dirty){e.preventDefault();e.returnValue=''}});
  $('#zoomIn').onclick=()=>viewer?.zoom(-.35);$('#zoomOut').onclick=()=>viewer?.zoom(.35);$('#resetView').onclick=()=>setView(headMode?'head':'front');
@@ -278,6 +322,6 @@ class FaceLab{
  up(){this.drag=null}
  destroy(){this.resizeObserver.disconnect();this.canvas.removeEventListener('pointerdown',this.boundDown);this.canvas.removeEventListener('pointermove',this.boundMove);this.canvas.removeEventListener('pointerup',this.boundUp);this.canvas.removeEventListener('pointercancel',this.boundUp)}
 }
-async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.5.1');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
+async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.6.0');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
 async function init(){setupControls();try{catalog=await api('/api/catalog');chosen=structuredClone(catalog.starter||fallback);setupClips();syncControls();$('#faceFoot').textContent=`${catalog.faces.length} UV textures available`;$('#engineState').textContent=catalog.blender_available?'BLENDER READY':'BLENDER NOT DETECTED';setStatus(catalog.model_available?'SOURCE MODEL READY — NOBODY CAME / character_kit':'BASE MODEL NOT BUILT');if(catalog.model_available)initViewer();else {$('#viewerHint').textContent='Base model missing. Follow README to rebuild human.glb.';toast('Source human.glb is missing',true)} }catch(e){console.error(e);toast('Could not load character data: '+e.message,true);$('#viewerHint').textContent='Unable to connect to character pipeline.'}}
 init();

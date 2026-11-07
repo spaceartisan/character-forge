@@ -62,3 +62,18 @@
 .shape-sub input{width:54px;background:#17232b;border:1px solid #33434c;border-radius:4px;color:#e3ece8;padding:3px 5px;font-size:10px}
 .shape-modes button.active{background:#f0b25a}
 .edit-shape{white-space:nowrap}
+
+/* Base shapes */
+.base-shape{display:flex;flex-direction:column;gap:6px;font-size:10px;letter-spacing:.06em;color:#a9bbb8;margin-top:12px}
+.base-shape select{background:#17232b;border:1px solid #33434c;border-radius:6px;color:#e3ece8;padding:8px;font-size:12px}
+.shape-library{border-top:1px solid #2a3740;margin-top:12px;padding-top:10px}
+.shape-library h4{margin:0;font:650 13px var(--display);color:#e3ece8}
+.shape-save{display:flex;gap:6px;margin:6px 0 8px}
+.shape-save input{flex:1;min-width:0;background:#17232b;border:1px solid #33434c;border-radius:6px;color:#e3ece8;padding:6px 8px;font-size:11px}
+.shape-list{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:5px}
+.shape-list li{display:flex;align-items:center;gap:10px;background:#17232b;border:1px solid #2c3a43;border-radius:6px;padding:7px 9px}
+.shape-list li.current{border-color:#b4d3a5}
+.shape-list li span{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.shape-list strong{font-size:11px;color:#e3ece8}
+.shape-list small{font-size:9px;color:#7d8f97;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.link-btn.danger{color:#e59a8c}
