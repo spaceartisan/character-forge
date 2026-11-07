@@ -45,8 +45,8 @@
      <div class="view-label"><span class="live-dot"></span><span id="viewLabel">PERSPECTIVE / LIVE VIEW</span></div>
      <div class="viewport-topright"><span id="polyReadout">REAL-TIME MODEL</span></div>
      <div id="stage"><img id="previewFallback" src="/static/preview_agent.png" alt="Character studio preview" class="preview-fallback"><div id="viewerHint">Initializing 3D viewer...</div></div>
-     <div class="viewport-info"><span class="crosshair">＋</span> <span>ORBIT TO INSPECT</span></div>
-     <div class="view-controls"><div class="view-group"><button class="view-button active" data-view="front">FRONT</button><button class="view-button" data-view="side">SIDE</button><button class="view-button" data-view="back">BACK</button><button class="view-button" data-view="free">3D</button></div><div class="zoom-controls"><button id="zoomOut" aria-label="Zoom out">−</button><button id="resetView" aria-label="Reset camera">⌖</button><button id="zoomIn" aria-label="Zoom in">+</button></div></div>
+     <div class="head-tools hidden" id="headTools"><div class="head-tools-row"><span class="head-tools-label">ORBIT TO</span><button data-angle="front">Front</button><button data-angle="left">Left</button><button data-angle="right">Right</button><button data-angle="back">Back</button><button data-angle="top">Top</button><button data-angle="under">Chin</button></div><div class="head-tools-row"><label class="head-check"><input type="checkbox" id="headFlat"> True colour</label><label class="head-check"><input type="checkbox" id="headHideHair"> Hide hair, hat &amp; glasses</label><button id="openFaceTexture" class="head-open">Open texture ↗</button></div><div class="head-path" id="headPath"></div></div><div class="viewport-info"><span class="crosshair">＋</span> <span>ORBIT TO INSPECT</span></div>
+     <div class="view-controls"><div class="view-group"><button class="view-button active" data-view="front">FRONT</button><button class="view-button" data-view="side">SIDE</button><button class="view-button" data-view="back">BACK</button><button class="view-button" data-view="free">3D</button><button class="view-button head-button" data-view="head" title="Focus on the head for texture painting">HEAD</button></div><div class="zoom-controls"><button id="zoomOut" aria-label="Zoom out">−</button><button id="resetView" aria-label="Reset camera">⌖</button><button id="zoomIn" aria-label="Zoom in">+</button></div></div>
     </div>
     <div class="motion-bar"><div class="motion-icon">◉</div><div class="motion-desc"><strong>Motion preview</strong><small>Use the original skeleton's animation library</small></div><div class="motion-control"><select id="animationSelect" aria-label="Animation"><option>idle</option></select><button class="play-button" id="playToggle" title="Play / pause">❚❚</button></div></div>
     <div class="stage-footer"><span><span class="tiny-dot"></span> <b id="meshStatus">SOURCE READY</b></span><span id="stageStatus">17 bones · 13 animation clips</span><button id="resetCharacter" class="text-button">Reset to default ↻</button></div>
@@ -73,6 +73,6 @@
 </div>
 <div id="modalBackdrop" class="modal-backdrop hidden" aria-hidden="true"><div class="modal" id="dialogContent"></div></div>
 <div id="toast" class="toast" role="status"></div>
-<script type="module" src="/static/app.js?v=2.0.0"></script>
+<script type="module" src="/static/app.js?v=2.1.0"></script>
 </body>
 </html>

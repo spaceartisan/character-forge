@@ -16,7 +16,7 @@ function modelChange(){try{const v=viewer?.update(chosen);if(v)$('#meshStatus').
 function setStatus(text){$('#bottomStatus').textContent=text}
 function dirty(){modelChange(); $('#crumbName').textContent=chosen.name}
 function chooseFace(id){const f=faceById(id);if(!f)return;chosen.face=f.id;chosen.body=f.body;chosen.colors.skin=f.skin;chosen.colors.hair=f.hair; if(id==='agent'){chosen.outfit='suit';chosen.hair='none';chosen.hat=true;chosen.glasses=true;chosen.fabric={top:'suitcloth',pants:'suitcloth'}} else if(id==='fed'){chosen.outfit='suit';chosen.hair='short';chosen.glasses=false;chosen.fabric={top:'cloth',pants:'cloth'}} else if(chosen.body==='f'&&chosen.outfit!=='dress'&&chosen.hair==='none'){chosen.hair='long'} else if(chosen.face!==id){ /* Keep outfit otherwise */ }
-chosen.name=f.name;syncControls();dirty()}
+chosen.name=f.name;syncControls();dirty();updateHeadPath()}
 function faceResults(){const q=$('#faceSearch').value.trim().toLowerCase();return catalog.faces.filter(f=>{const filter=activeFaceFilter==='all'||(activeFaceFilter==='custom'?f.custom:f.body===activeFaceFilter);return filter&&(`${f.name} ${f.id}`).toLowerCase().includes(q)})}
 function renderFaceGrid(){if(!catalog)return;let list=faceResults();$('#faceCount').textContent=catalog.faces.length;$('#faceGrid').innerHTML=list.map(f=>`<button class="face-tile ${f.id===chosen.face?'active':''}" data-face="${safeText(f.id)}" title="${safeText(f.name)}"><img loading="lazy" src="${safeText(f.texture)}" alt="${safeText(f.name)}"><span class="tile-label">${safeText(f.name)}</span><span class="tile-id">${safeText(f.id)} ${f.custom?'· CUSTOM':''}</span></button>`).join('')||'<div class="loading-cards">No matching faces.</div>'; $$('.face-tile').forEach(t=>t.addEventListener('click',()=>chooseFace(t.dataset.face)));}
 function syncControls(){
@@ -31,8 +31,13 @@ function syncControls(){
  $$('[data-clip]').forEach(x=>x.classList.toggle('active',x.dataset.clip===chosen.animation));
  $$('.color-field input').forEach(i=>{i.value=chosen.colors[i.dataset.color]||'#ffffff';i.closest('.color-field').querySelector('.hex-label').textContent=i.value.toUpperCase()});
  $$('[data-fabric]').forEach(el=>{el.value=chosen.fabric?.[el.dataset.fabric]||'cloth'});
- renderFaceGrid();viewer?.update(chosen);
+ renderFaceGrid();viewer?.update(chosen);updateHeadPath();
 }
+// Head mode: close orbit around the head, for checking painted face textures.
+let headMode=false;
+function setView(v){headMode=v==='head';$$('.view-button').forEach(x=>x.classList.toggle('active',x.dataset.view===v));$('#headTools').classList.toggle('hidden',!headMode);$('#viewLabel').textContent=headMode?'HEAD FOCUS / LIVE VIEW':'PERSPECTIVE / LIVE VIEW';updateHeadPath();viewer?.setView(v)}
+function updateHeadPath(){const el=$('#headPath');if(el)el.textContent='Painting: assets/textures/face_'+chosen.face+'.png  ·  saves reload here automatically'}
+async function openFaceTexture(){try{const r=await api('/api/faces/'+encodeURIComponent(chosen.face)+'/open',{method:'POST',body:'{}'});toast('Opened '+r.file+' in your image editor. Save it and the preview updates.')}catch(e){toast(e.message,true)}}
 function setTab(t){activeTab=t;$$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));$$('.tab-page').forEach(x=>x.classList.toggle('active',x.dataset.page===t))}
 function setupControls(){
  $$('.filter').forEach(b=>b.onclick=()=>{activeFaceFilter=b.dataset.filter;$$('.filter').forEach(x=>x.classList.toggle('active',x===b));renderFaceGrid()});
@@ -45,8 +50,12 @@ function setupControls(){
  $('#glassesToggle').onchange=e=>{chosen.glasses=e.target.checked;dirty()};
  $('#scaleInput').oninput=e=>{chosen.scale=Number(e.target.value);$('#scaleLabel').textContent=chosen.scale.toFixed(2)+'×';dirty()};
  const name=$('#characterName');name.onblur=()=>{const value=name.textContent.replaceAll('\n',' ').trim().slice(0,80);chosen.name=value||'Character';name.textContent=chosen.name;$('#crumbName').textContent=chosen.name};name.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();name.blur()}};
- $$('.view-button').forEach(b=>b.onclick=()=>{$$('.view-button').forEach(x=>x.classList.toggle('active',x===b));viewer?.setView(b.dataset.view)});
- $('#zoomIn').onclick=()=>viewer?.zoom(-.35);$('#zoomOut').onclick=()=>viewer?.zoom(.35);$('#resetView').onclick=()=>{viewer?.setView('front');$$('.view-button').forEach(x=>x.classList.toggle('active',x.dataset.view==='front'))};
+ $$('.view-button').forEach(b=>b.onclick=()=>setView(b.dataset.view));
+ $$('[data-angle]').forEach(b=>b.onclick=()=>viewer?.headAngle(b.dataset.angle));
+ $('#headFlat').onchange=e=>viewer?.setHeadOptions({flat:e.target.checked});
+ $('#headHideHair').onchange=e=>viewer?.setHeadOptions({hideHair:e.target.checked});
+ $('#openFaceTexture').onclick=openFaceTexture;
+ $('#zoomIn').onclick=()=>viewer?.zoom(-.35);$('#zoomOut').onclick=()=>viewer?.zoom(.35);$('#resetView').onclick=()=>setView(headMode?'head':'front');
  $('#playToggle').onclick=()=>{playing=!playing;viewer?.setPlaying(playing);$('#playToggle').textContent=playing?'❚❚':'▶'};
  $('#animationSelect').onchange=e=>selectClip(e.target.value);
  $('#speedRange').oninput=e=>{$('#speedLabel').textContent=Number(e.target.value).toFixed(2)+'×';viewer?.setSpeed(Number(e.target.value))};
@@ -93,6 +102,6 @@ class FaceLab{
  up(){this.drag=null}
  destroy(){this.resizeObserver.disconnect();this.canvas.removeEventListener('pointerdown',this.boundDown);this.canvas.removeEventListener('pointermove',this.boundMove);this.canvas.removeEventListener('pointerup',this.boundUp);this.canvas.removeEventListener('pointercancel',this.boundUp)}
 }
-async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.0.0');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
+async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.1.0');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
 async function init(){setupControls();try{catalog=await api('/api/catalog');chosen=structuredClone(catalog.starter||fallback);setupClips();syncControls();$('#faceFoot').textContent=`${catalog.faces.length} UV textures available`;$('#engineState').textContent=catalog.blender_available?'BLENDER READY':'BLENDER NOT DETECTED';setStatus(catalog.model_available?'SOURCE MODEL READY — NOBODY CAME / character_kit':'BASE MODEL NOT BUILT');if(catalog.model_available)initViewer();else {$('#viewerHint').textContent='Base model missing. Follow README to rebuild human.glb.';toast('Source human.glb is missing',true)} }catch(e){console.error(e);toast('Could not load character data: '+e.message,true);$('#viewerHint').textContent='Unable to connect to character pipeline.'}}
 init();

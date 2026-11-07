@@ -235,6 +235,21 @@ def render_face(body:FaceRender):
     f['texture']+='?v='+str(int(time.time()))
     return {'ok':True,'face':f}
 
+@app.post('/api/faces/{face_id}/open')
+def open_face_texture(face_id:str):
+    """Open a face texture in the system's default image editor (head mode's 'Open texture').
+    The viewer reloads the texture when the file changes, so saving shows up straight away."""
+    if not re.fullmatch(r'[a-z][a-z0-9_]{0,20}',face_id): raise HTTPException(400,'Invalid face')
+    path=TEXTURES/f'face_{face_id}.png'
+    if not path.is_file(): raise HTTPException(404,'Face texture missing')
+    try:
+        if os.name=='nt': os.startfile(str(path))  # noqa: S606  local tool, fixed path inside the project
+        elif sys.platform=='darwin': subprocess.Popen(['open',str(path)])
+        else: subprocess.Popen(['xdg-open',str(path)])
+    except OSError as ex:
+        raise HTTPException(500,f'Could not open the texture: {ex}')
+    return {'ok':True,'file':str(path.relative_to(ROOT)).replace('\\','/')}
+
 class PresetWrite(BaseModel):
     character:dict
 

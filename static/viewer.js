@@ -12,7 +12,7 @@ import { collectCharacterParts, applyCharacterParts } from './character-parts.mj
 
 export async function startViewer(stage, src, rules) {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(38, 1, 0.08, 80);
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 80); // near plane small enough for head close-ups
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -22,10 +22,10 @@ export async function startViewer(stage, src, rules) {
   stage.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  Object.assign(controls, {
-    enableDamping: true, dampingFactor: 0.085, minDistance: 0.8, maxDistance: 6,
-    maxPolarAngle: Math.PI * 0.89, minPolarAngle: Math.PI * 0.1, enablePan: false,
-  });
+  // Whole-body framing vs. head focus (for checking painted face textures up close).
+  const BODY_LIMITS = { minDistance: 0.8, maxDistance: 6, maxPolarAngle: Math.PI * 0.89, minPolarAngle: Math.PI * 0.1, zoomSpeed: 1 };
+  const HEAD_LIMITS = { minDistance: 0.12, maxDistance: 1.6, maxPolarAngle: Math.PI * 0.97, minPolarAngle: Math.PI * 0.03, zoomSpeed: 0.6 };
+  Object.assign(controls, { enableDamping: true, dampingFactor: 0.085, enablePan: false }, BODY_LIMITS);
 
   // Neutral studio light: a soft sky, one warm key and a cool rim.
   scene.add(new THREE.HemisphereLight(0xdfe8ee, 0x3a3d40, 1.1));
@@ -57,6 +57,27 @@ export async function startViewer(stage, src, rules) {
     o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
   });
 
+  // The painted head's centre, in the head bone's space (bone at 1.547 m, face spans 1.47-1.79 m).
+  const headBone = root.getObjectByName('head');
+  const HEAD_CENTRE = new THREE.Vector3(0, 0.113, 0.005);
+  let mode = 'body';
+  const headView = { flat: false, hideHair: false };
+  let current = null;
+
+  function headCentre() {
+    if (!headBone) return new THREE.Vector3(0, 1.66 * root.scale.y, 0);
+    root.updateMatrixWorld();
+    return headBone.localToWorld(HEAD_CENTRE.clone());
+  }
+  // Keep the orbit centred on the head while it moves with the animation.
+  function followHead() {
+    const next = headCentre();
+    const delta = next.clone().sub(controls.target);
+    if (delta.lengthSq() < 1e-10) return;
+    camera.position.add(delta);
+    controls.target.copy(next);
+  }
+
   const textures = new TextureCache();
   const loops = new Set(rules.loop);
   const mixer = new THREE.AnimationMixer(root);
@@ -72,6 +93,7 @@ export async function startViewer(stage, src, rules) {
   function render() {
     const dt = Math.min(0.1, clock.getDelta());
     if (playing) mixer.update(dt * speed);
+    if (mode === 'head') followHead();
     controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(render);
@@ -103,26 +125,42 @@ export async function startViewer(stage, src, rules) {
   }
 
   function update(cfg) {
+    current = cfg;
     const result = applyCharacterParts(parts, cfg);
     if (result.missing.length) console.warn('Optional GLB parts not found:', result.missing);
+    // Head mode can hide hair, hat and glasses for a clear view of the forehead and eyes (display only, not saved).
+    if (mode === 'head' && headView.hideHair) {
+      for (const id of ['hair_short', 'hair_long', 'hat', 'glasses']) parts.get(id) && (parts.get(id).visible = false);
+    }
+    const flatFace = mode === 'head' && headView.flat;
     root.scale.setScalar(cfg.scale || 1);
     for (const o of meshes) {
       for (const mat of Array.isArray(o.material) ? o.material : [o.material]) {
         const slot = mat.name.split('.')[0];
         const rule = surfaceRule(o.userData.part, slot);
         if (!rule) continue;
-        const tint = rule.tex === '@face' ? '#ffffff' : (cfg.colors[rule.color || slot] || '#ffffff');
+        const isFace = rule.tex === '@face';
+        const tint = isFace ? '#ffffff' : (cfg.colors[rule.color || slot] || '#ffffff');
         mat.color.set(tint);
         mat.roughness = rule.rough;
         mat.metalness = 0;
         mat.transparent = false; mat.opacity = 1; mat.depthWrite = true;
         mat.vertexColors = Boolean(o.geometry.attributes.color); // baked crease shading
+        // "True colour": the painted pixels exactly, with no light or baked shading on top.
+        const flat = isFace && flatFace;
+        if (flat) { mat.color.set('#000000'); mat.emissive.set('#ffffff'); mat.vertexColors = false; }
+        else mat.emissive.set('#000000');
+        mat.emissiveMap = flat ? mat.map : null;
+        mat.toneMapped = !flat; // tone mapping would shift the painted colours
+        mat.userData.flat = flat;
         const url = textureFor(rule.tex, cfg);
         if (mat.userData.url !== url) {
           mat.userData.url = url;
-          textures.get(url, rule.tex === '@face').then(t => {
+          textures.get(url, isFace).then(t => {
             if (mat.userData.url !== url) return; // changed again while loading
-            mat.map = t; mat.needsUpdate = true;
+            mat.map = t;
+            if (mat.userData.flat) mat.emissiveMap = t;
+            mat.needsUpdate = true;
           });
         }
         mat.needsUpdate = true;
@@ -133,22 +171,68 @@ export async function startViewer(stage, src, rules) {
   }
 
   function setView(v) {
-    const d = 3.4;
-    if (v === 'front') camera.position.set(0, 1.48, d);
-    else if (v === 'side') camera.position.set(d, 1.48, 0);
-    else if (v === 'back') camera.position.set(0, 1.48, -d);
-    else camera.position.set(2.2, 1.65, 2.65);
-    controls.target.set(0, 1.03, 0); camera.lookAt(controls.target); controls.update();
+    const wasHead = mode === 'head';
+    mode = v === 'head' ? 'head' : 'body';
+    if (mode === 'head') {
+      Object.assign(controls, HEAD_LIMITS);
+      const c = headCentre();
+      controls.target.copy(c);
+      camera.position.set(c.x, c.y + 0.03, c.z + 0.6);
+    } else {
+      Object.assign(controls, BODY_LIMITS);
+      const d = 3.4;
+      if (v === 'front') camera.position.set(0, 1.48, d);
+      else if (v === 'side') camera.position.set(d, 1.48, 0);
+      else if (v === 'back') camera.position.set(0, 1.48, -d);
+      else camera.position.set(2.2, 1.65, 2.65);
+      controls.target.set(0, 1.03, 0);
+    }
+    camera.lookAt(controls.target); controls.update();
+    if (current && wasHead !== (mode === 'head')) update(current); // head-only display options on/off
+  }
+  // Orbit the head to a fixed side in head mode: front, left, right, back, top, under.
+  function headAngle(name) {
+    if (mode !== 'head') return;
+    const c = controls.target, r = camera.position.distanceTo(c);
+    const dirs = { front: [0, 0.05, 1], left: [1, 0.05, 0], right: [-1, 0.05, 0], back: [0, 0.05, -1], top: [0, 1, 0.12], under: [0, -1, 0.35] };
+    const d = new THREE.Vector3(...(dirs[name] || dirs.front)).normalize().multiplyScalar(r);
+    camera.position.copy(c).add(d); controls.update();
   }
   function zoom(delta) {
+    const scale = mode === 'head' ? 0.25 : 1; // finer steps up close
     const dir = camera.position.clone().sub(controls.target);
-    dir.setLength(THREE.MathUtils.clamp(dir.length() + delta, 0.8, 6));
+    dir.setLength(THREE.MathUtils.clamp(dir.length() + delta * scale, controls.minDistance, controls.maxDistance));
     camera.position.copy(controls.target).add(dir); controls.update();
   }
+  function setHeadOptions(opts) {
+    Object.assign(headView, opts);
+    if (current) update(current);
+  }
+
+  // Reload the face texture whenever its PNG changes on disk, so painting in an
+  // external editor shows up here on save.
+  let faceStamp = { face: null, stamp: null };
+  async function checkFace() {
+    if (!current || document.hidden) return;
+    const face = current.face, url = '/textures/face_' + encodeURIComponent(face) + '.png';
+    try {
+      const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+      const stamp = r.headers.get('last-modified') + '|' + r.headers.get('etag');
+      if (faceStamp.face === face && faceStamp.stamp !== stamp && current.face === face) {
+        for (const o of meshes) for (const m of [o.material].flat()) if (m.userData.url === url) m.userData.url = null;
+        update(current);
+        onFaceReload?.(face);
+      }
+      faceStamp = { face, stamp };
+    } catch { /* server gone; try again next tick */ }
+  }
+  let onFaceReload = null;
+  setInterval(checkFace, 1200);
   setView('front');
 
   return {
-    update, play, setView, zoom,
+    update, play, setView, zoom, headAngle, setHeadOptions,
+    onFaceReload: fn => { onFaceReload = fn; },
     setPlaying: v => { playing = v; },
     setSpeed: v => { speed = v; },
     stats: `${(triangles / 1000).toFixed(1)}K SOURCE TRIS`,
