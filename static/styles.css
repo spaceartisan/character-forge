@@ -35,3 +35,14 @@
 .src-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 .map-actions{display:flex;gap:8px;justify-content:flex-end}
 .map-actions .btn{padding:9px 12px}
+
+/* Brush touch-up panel (head mode) */
+.paint-tools{margin:12px 0 10px}
+.paint-tools button.active{background:#cfe6b9}
+.paint-color{display:flex;align-items:center;gap:9px;font-size:10px;color:#a9bbb8;margin:4px 0 8px}
+.paint-color input{width:38px;height:26px;padding:0;border:1px solid #3a4b54;border-radius:5px;background:none;cursor:pointer}
+.paint-color span{font-size:9px;color:#748790}
+.muted-off{opacity:.45}
+.paint-tip{min-height:30px}
+.paint-history{justify-content:flex-start;margin-bottom:8px}
+.paint-keys{color:#6f828b}

@@ -336,6 +336,58 @@ def save_face_mapping(face_id:str, body:MappingWrite):
     f['texture']+='?v='+str(int(time.time()*1000))
     return {'ok':True,'face':f,'mapping':mapping,'backup':f'face_{face_id}.prev.png'}
 
+# ---- Brush touch-ups (head mode): paint, smudge and blur straight onto the 3D head
+class PaintWrite(BaseModel):
+    image:str          # base64 PNG: the whole touched-up texture
+    mask:str=''        # base64 PNG (greyscale): how strongly each texel was touched, kept for rebakes
+
+def decode_png(data, mode):
+    try:
+        with Image.open(io.BytesIO(base64.b64decode(data.split(',')[-1]))) as im:
+            return im.convert(mode)
+    except Exception:
+        raise HTTPException(400,'Invalid image data')
+
+@app.post('/api/faces/{face_id}/paint')
+def save_face_paint(face_id:str, body:PaintWrite):
+    """Save brush touch-ups. The texture is replaced (previous kept as face_<id>.prev.png) and the touched
+    texels are stored as face_<id>.touch.png, which every later rebake lays back on top."""
+    check_face(face_id)
+    size=(face_pipeline.TEX,face_pipeline.TEX)
+    img=decode_png(body.image,'RGB')
+    if img.size!=size: raise HTTPException(400,f'Texture must be {size[0]}x{size[1]}')
+    path=TEXTURES/f'face_{face_id}.png'
+    touch=path.with_name(f'face_{face_id}.touch.png')
+    with BAKE_LOCK:
+        shutil.copy2(path,path.with_name(f'face_{face_id}.prev.png'))
+        img.save(path)
+        if body.mask:
+            mask=decode_png(body.mask,'L')
+            if mask.size!=size: raise HTTPException(400,'Mask size does not match the texture')
+            if mask.getbbox():
+                layer=img.convert('RGBA'); layer.putalpha(mask); layer.save(touch)
+            elif touch.is_file(): touch.unlink()
+    f=face_meta(face_id)
+    f['texture']+='?v='+str(int(time.time()*1000))
+    return {'ok':True,'face':f,'backup':f'face_{face_id}.prev.png','touch':touch.is_file()}
+
+@app.post('/api/faces/{face_id}/paint/clear')
+def clear_face_paint(face_id:str):
+    """Drop every saved touch-up and rebake the face from its reference."""
+    check_face(face_id)
+    src=face_sources(face_id)
+    if src is None: raise HTTPException(400,'This face has no saved reference to rebake from, so its touch-ups are part of the texture')
+    path=TEXTURES/f'face_{face_id}.png'
+    with BAKE_LOCK:
+        shutil.copy2(path,path.with_name(f'face_{face_id}.prev.png'))
+        touch=path.with_name(f'face_{face_id}.touch.png')
+        if touch.is_file(): touch.unlink()
+        try: src[1](face_pipeline.mapping_for(face_id))
+        except Exception as ex: raise HTTPException(400,f'Rebake failed: {ex}')
+    f=face_meta(face_id)
+    f['texture']+='?v='+str(int(time.time()*1000))
+    return {'ok':True,'face':f,'backup':f'face_{face_id}.prev.png'}
+
 class PresetWrite(BaseModel):
     character:dict
 

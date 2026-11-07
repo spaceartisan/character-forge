@@ -111,6 +111,8 @@ Always look at them: the numbers won't show you a bad face.
 
 Change a face's mapping in the Forge: head mode, **Map sources**. It shows the regions on the head, coloured by source, and **Rebake texture** bakes the face again (the previous PNG is kept as `face_<id>.prev.png`). Choices are saved per face in `faces/mappings.json`, which `build.py --faces` also uses.
 
+**Touch-ups.** Brush work done in the Forge (head mode, **Touch up**) is saved twice: into `face_<id>.png`, and as `face_<id>.touch.png` (the touched colours, with alpha for how strongly each texel was touched). `build()` lays the touch layer over every fresh bake (`apply_touchups`), so rebaking from the reference, or with a new source mapping, keeps them. Delete the `.touch.png` to drop them.
+
 Textures painted for the old 512 px front projection are moved into the new layout by `legacy_to_new()`; the Forge server does this for old custom faces on start-up and keeps the old file as `face_<id>.512.bak.png`.
 
 ### Add a new face from a new image (step by step)

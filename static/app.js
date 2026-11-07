@@ -15,7 +15,7 @@ function faceById(id){return catalog?.faces.find(f=>f.id===id)}
 function modelChange(){try{const v=viewer?.update(chosen);if(v)$('#meshStatus').textContent=`${v.visible.length} PARTS VISIBLE`;setStatus('LIVE MATERIAL & OUTFIT PREVIEW')}catch(e){toast('Preview issue: '+e.message,true);console.error(e)}}
 function setStatus(text){$('#bottomStatus').textContent=text}
 function dirty(){modelChange(); $('#crumbName').textContent=chosen.name}
-function chooseFace(id){const f=faceById(id);if(!f)return;if(mapState&&mapState.face!==id)closeMapPanel();chosen.face=f.id;chosen.body=f.body;chosen.colors.skin=f.skin;chosen.colors.hair=f.hair; if(id==='agent'){chosen.outfit='suit';chosen.hair='none';chosen.hat=true;chosen.glasses=true;chosen.fabric={top:'suitcloth',pants:'suitcloth'}} else if(id==='fed'){chosen.outfit='suit';chosen.hair='short';chosen.glasses=false;chosen.fabric={top:'cloth',pants:'cloth'}} else if(chosen.body==='f'&&chosen.outfit!=='dress'&&chosen.hair==='none'){chosen.hair='long'} else if(chosen.face!==id){ /* Keep outfit otherwise */ }
+function chooseFace(id){const f=faceById(id);if(!f)return;if(paintFace&&paintFace!==id&&!closePaintPanel())return;if(mapState&&mapState.face!==id)closeMapPanel();chosen.face=f.id;chosen.body=f.body;chosen.colors.skin=f.skin;chosen.colors.hair=f.hair; if(id==='agent'){chosen.outfit='suit';chosen.hair='none';chosen.hat=true;chosen.glasses=true;chosen.fabric={top:'suitcloth',pants:'suitcloth'}} else if(id==='fed'){chosen.outfit='suit';chosen.hair='short';chosen.glasses=false;chosen.fabric={top:'cloth',pants:'cloth'}} else if(chosen.body==='f'&&chosen.outfit!=='dress'&&chosen.hair==='none'){chosen.hair='long'} else if(chosen.face!==id){ /* Keep outfit otherwise */ }
 chosen.name=f.name;syncControls();dirty();updateHeadPath()}
 function faceResults(){const q=$('#faceSearch').value.trim().toLowerCase();return catalog.faces.filter(f=>{const filter=activeFaceFilter==='all'||(activeFaceFilter==='custom'?f.custom:f.body===activeFaceFilter);return filter&&(`${f.name} ${f.id}`).toLowerCase().includes(q)})}
 function renderFaceGrid(){if(!catalog)return;let list=faceResults();$('#faceCount').textContent=catalog.faces.length;$('#faceGrid').innerHTML=list.map(f=>`<button class="face-tile ${f.id===chosen.face?'active':''}" data-face="${safeText(f.id)}" title="${safeText(f.name)}"><img loading="lazy" src="${safeText(f.texture)}" alt="${safeText(f.name)}"><span class="tile-label">${safeText(f.name)}</span><span class="tile-id">${safeText(f.id)} ${f.custom?'· CUSTOM':''}</span></button>`).join('')||'<div class="loading-cards">No matching faces.</div>'; $$('.face-tile').forEach(t=>t.addEventListener('click',()=>chooseFace(t.dataset.face)));}
@@ -35,7 +35,7 @@ function syncControls(){
 }
 // Head mode: close orbit around the head, for checking painted face textures.
 let headMode=false;
-function setView(v){headMode=v==='head';if(!headMode)closeMapPanel();$$('.view-button').forEach(x=>x.classList.toggle('active',x.dataset.view===v));$('#headTools').classList.toggle('hidden',!headMode);$('#viewLabel').textContent=headMode?'HEAD FOCUS / LIVE VIEW':'PERSPECTIVE / LIVE VIEW';updateHeadPath();viewer?.setView(v)}
+function setView(v){if(v!=='head'&&paintFace&&!closePaintPanel())return;headMode=v==='head';if(!headMode)closeMapPanel();$$('.view-button').forEach(x=>x.classList.toggle('active',x.dataset.view===v));$('#headTools').classList.toggle('hidden',!headMode);$('#viewLabel').textContent=headMode?'HEAD FOCUS / LIVE VIEW':'PERSPECTIVE / LIVE VIEW';updateHeadPath();viewer?.setView(v)}
 function updateHeadPath(){const el=$('#headPath');if(el)el.textContent='Painting: assets/textures/face_'+chosen.face+'.png  ·  saves reload here automatically'}
 async function openFaceTexture(){try{const r=await api('/api/faces/'+encodeURIComponent(chosen.face)+'/open',{method:'POST',body:'{}'});toast('Opened '+r.file+' in your image editor. Save it and the preview updates.')}catch(e){toast(e.message,true)}}
 // Source mapping (head mode): which view of the reference paints which part of the head.
@@ -43,6 +43,7 @@ let mapState=null;
 const SOURCE_LABEL={front:'Front',side:'Side',both:'Both',fill:'Fill'};
 const SOURCE_HINT={front:'Front view only',side:'Profile only',both:'Blend front and profile',fill:'Neither: smooth fill from around it'};
 async function openMapPanel(){
+ if(paintFace&&!closePaintPanel())return;
  const face=chosen.face;
  try{
   const d=await api('/api/faces/'+encodeURIComponent(face)+'/mapping');
@@ -91,6 +92,73 @@ async function rebakeMapped(){
  }catch(e){toast(e.message,true)}
  finally{s.busy=false;if(mapState===s)renderMapPanel()}
 }
+// Brush touch-ups (head mode): paint, smudge and blur straight onto the 3D head (painter.js).
+let painter=null,paintFace=null,paintMod=null;
+const hex=c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join('');
+const unhex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+async function openPaintPanel(){
+ if(!viewer)return toast('The 3D view is not ready',true);
+ closeMapPanel();
+ try{
+  paintMod=paintMod||await import('/static/painter.js?v=2.4.2');
+  if(!painter)painter=new paintMod.FacePainter(viewer,$('#stage'),{onChange:renderPaintPanel,onPick:()=>{if(painter.tool==='pick')painter.tool='paint'}});
+  paintFace=chosen.face;setStatus('LOADING FACE '+paintFace.toUpperCase()+' FOR TOUCH-UPS…');
+  await painter.start(paintFace);
+  $('#touchUp').classList.add('active');$('#touchUp').setAttribute('aria-expanded','true');
+  setStatus('TOUCH-UP: LEFT-DRAG ON THE HEAD TO PAINT, RIGHT-DRAG TO ORBIT');
+ }catch(e){paintFace=null;toast('Could not start touch-ups: '+e.message,true)}
+}
+function closePaintPanel(force){
+ if(!paintFace)return true;
+ if(!force&&painter.dirty&&!confirm('Discard the unsaved touch-ups on face '+paintFace+'?'))return false;
+ painter.stop();paintFace=null;
+ $('#paintPanel')?.classList.add('hidden');$('#touchUp').classList.remove('active');$('#touchUp').setAttribute('aria-expanded','false');
+ return true;
+}
+function renderPaintPanel(){
+ if(!painter?.active)return;
+ let el=$('#paintPanel');if(!el){el=document.createElement('aside');el.id='paintPanel';el.className='map-panel paint-panel hidden';el.setAttribute('aria-label','Brush touch-ups');$('.inspector-panel').appendChild(el)}
+ const P=painter,T=paintMod.TOOLS,brush=P.tool!=='pick';
+ el.innerHTML=`<div class="map-head"><div><span class="map-kicker">FACE ${safeText(paintFace.toUpperCase())}${P.dirty?' · UNSAVED':''}</span><h3>Touch up</h3></div><button class="x-close" id="paintClose" aria-label="Close">×</button></div>
+ <p class="map-note">Left-drag on the head to brush. Right-drag orbits, scroll zooms. The pose holds still while you work.</p>
+ <div class="map-seg paint-tools" role="group" aria-label="Brush">${Object.entries(T).map(([k,t])=>`<button data-tool="${k}" class="${P.tool===k?'active':''}" title="${t.label} (${t.key.toUpperCase()})">${t.label}</button>`).join('')}</div>
+ <label class="paint-color">Colour <input type="color" id="paintColor" value="${hex(P.color)}"><span>Alt-click the head to pick</span></label>
+ <label class="map-reach">Size <strong>${P.size.toFixed(P.size<10?1:0)} mm</strong><input type="range" id="paintSize" min="0" max="100" value="${Math.round(Math.log(P.size)/Math.log(40)*100)}"></label>
+ <label class="map-reach ${brush?'':'muted-off'}">Strength <strong>${Math.round(P.strength*100)}%</strong><input type="range" id="paintStrength" min="5" max="100" value="${Math.round(P.strength*100)}" ${brush?'':'disabled'}></label>
+ <label class="map-reach ${brush?'':'muted-off'}">Softness <strong>${Math.round(P.softness*100)}%</strong><input type="range" id="paintSoft" min="0" max="100" value="${Math.round(P.softness*100)}" ${brush?'':'disabled'}></label>
+ <p class="map-note paint-tip">${{paint:'Paint lays the colour on; one stroke never builds up past its strength.',smudge:'Smudge drags colour along the stroke, like a finger through wet paint.',blur:'Blur softens what it passes over; go over a spot again to soften more.',pick:'Click the head to take its colour, then go back to Paint.'}[P.tool]}</p>
+ <div class="map-actions paint-history"><button class="btn btn-ghost small" id="paintUndo" ${P.undo.length?'':'disabled'} title="Ctrl+Z">Undo</button><button class="btn btn-ghost small" id="paintRedo" ${P.redo.length?'':'disabled'} title="Ctrl+Shift+Z">Redo</button></div>
+ <div class="map-actions"><button class="btn btn-ghost small" id="paintDiscard" ${P.dirty?'':'disabled'}>Discard</button><button class="btn btn-accent small" id="paintSave" ${P.dirty&&!P.saving?'':'disabled'}>${P.saving?'Saving…':'Save texture'}</button></div>
+ <p class="map-note">Saving replaces face_${safeText(paintFace)}.png (the previous file is kept as face_${safeText(paintFace)}.prev.png). Your strokes are also kept in face_${safeText(paintFace)}.touch.png, so rebaking from the reference in Map sources lays them back on top.</p>
+ ${P.hadTouch?`<div class="map-actions"><button class="btn btn-ghost small" id="paintClear">Remove all saved touch-ups</button></div>`:''}
+ <p class="map-note paint-keys">Keys: P paint · S smudge · B blur · I pick · [ ] size · Ctrl+Z undo</p>`;
+ el.classList.remove('hidden');
+ $('#paintClose').onclick=()=>closePaintPanel();
+ $$('#paintPanel [data-tool]').forEach(b=>b.onclick=()=>{P.tool=b.dataset.tool;renderPaintPanel()});
+ $('#paintColor').oninput=e=>{P.color=unhex(e.target.value)};
+ $('#paintColor').onchange=()=>{if(P.tool==='pick'){P.tool='paint';renderPaintPanel()}};
+ const live=(id,fn)=>{const i=$(id);i.oninput=e=>{fn(Number(e.target.value));const strong=i.parentElement.querySelector('strong');strong.textContent=id==='#paintSize'?P.size.toFixed(P.size<10?1:0)+' mm':Math.round(Number(e.target.value))+'%'}};
+ live('#paintSize',v=>{P.size=Math.max(1,Math.pow(40,v/100))});
+ live('#paintStrength',v=>{P.strength=v/100});
+ live('#paintSoft',v=>{P.softness=v/100});
+ $('#paintUndo').onclick=()=>P.undoStep();$('#paintRedo').onclick=()=>P.redoStep();
+ $('#paintDiscard').onclick=()=>{while(P.undo.length)P.undoStep();P.redo=[];P.savedAt=P.version;renderPaintPanel()};
+ $('#paintSave').onclick=savePaint;
+ if($('#paintClear'))$('#paintClear').onclick=clearPaint;
+}
+function refreshFaceTexture(face,texture){const i=catalog.faces.findIndex(f=>f.id===face);if(i>=0)catalog.faces[i]={...catalog.faces[i],texture};renderFaceGrid()}
+async function savePaint(){
+ const P=painter;if(!P||P.saving)return;P.saving=true;renderPaintPanel();setStatus('SAVING TOUCH-UPS ON FACE '+paintFace.toUpperCase()+'…');
+ try{const r=await P.save(api);refreshFaceTexture(paintFace,r.face.texture);toast('Saved face '+paintFace+'. The previous texture is kept as '+r.backup+'.');setStatus('FACE '+paintFace.toUpperCase()+' TOUCH-UPS SAVED')}
+ catch(e){toast('Could not save: '+e.message,true)}
+ finally{P.saving=false;renderPaintPanel()}
+}
+async function clearPaint(){
+ const face=paintFace;
+ if(!confirm('Remove every saved touch-up on face '+face+' and rebake it from the reference? The current texture is kept as face_'+face+'.prev.png.'))return;
+ try{const r=await api('/api/faces/'+encodeURIComponent(face)+'/paint/clear',{method:'POST',body:'{}'});closePaintPanel(true);refreshFaceTexture(face,r.face.texture);toast('Rebaked face '+face+' without touch-ups.');openPaintPanel()}
+ catch(e){toast(e.message,true)}
+}
 function setTab(t){activeTab=t;$$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));$$('.tab-page').forEach(x=>x.classList.toggle('active',x.dataset.page===t))}
 function setupControls(){
  $$('.filter').forEach(b=>b.onclick=()=>{activeFaceFilter=b.dataset.filter;$$('.filter').forEach(x=>x.classList.toggle('active',x===b));renderFaceGrid()});
@@ -109,6 +177,8 @@ function setupControls(){
  $('#headHideHair').onchange=e=>viewer?.setHeadOptions({hideHair:e.target.checked});
  $('#openFaceTexture').onclick=openFaceTexture;
  $('#mapSources').onclick=()=>mapState?closeMapPanel():openMapPanel();
+ $('#touchUp').onclick=()=>paintFace?closePaintPanel():openPaintPanel();
+ window.addEventListener('beforeunload',e=>{if(painter?.active&&painter.dirty){e.preventDefault();e.returnValue=''}});
  $('#zoomIn').onclick=()=>viewer?.zoom(-.35);$('#zoomOut').onclick=()=>viewer?.zoom(.35);$('#resetView').onclick=()=>setView(headMode?'head':'front');
  $('#playToggle').onclick=()=>{playing=!playing;viewer?.setPlaying(playing);$('#playToggle').textContent=playing?'❚❚':'▶'};
  $('#animationSelect').onchange=e=>selectClip(e.target.value);
@@ -156,6 +226,6 @@ class FaceLab{
  up(){this.drag=null}
  destroy(){this.resizeObserver.disconnect();this.canvas.removeEventListener('pointerdown',this.boundDown);this.canvas.removeEventListener('pointermove',this.boundMove);this.canvas.removeEventListener('pointerup',this.boundUp);this.canvas.removeEventListener('pointercancel',this.boundUp)}
 }
-async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.3.1');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
+async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.4.2');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
 async function init(){setupControls();try{catalog=await api('/api/catalog');chosen=structuredClone(catalog.starter||fallback);setupClips();syncControls();$('#faceFoot').textContent=`${catalog.faces.length} UV textures available`;$('#engineState').textContent=catalog.blender_available?'BLENDER READY':'BLENDER NOT DETECTED';setStatus(catalog.model_available?'SOURCE MODEL READY — NOBODY CAME / character_kit':'BASE MODEL NOT BUILT');if(catalog.model_available)initViewer();else {$('#viewerHint').textContent='Base model missing. Follow README to rebuild human.glb.';toast('Source human.glb is missing',true)} }catch(e){console.error(e);toast('Could not load character data: '+e.message,true);$('#viewerHint').textContent='Unable to connect to character pipeline.'}}
 init();

@@ -456,6 +456,20 @@ def bake(src, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, hat=None
     return np.clip(push_pull(colour, confidence * cover), 0, 255).astype(np.uint8)
 
 
+def apply_touchups(img, path):
+    """Lay the brush touch-ups painted in the Forge (face_<id>.touch.png: colour plus a coverage alpha)
+    over a fresh bake, so rebaking from the reference keeps them."""
+    if not path.is_file():
+        return img
+    with Image.open(path) as t:
+        t = t.convert("RGBA")
+        if t.size != img.size:
+            t = t.resize(img.size, Image.LANCZOS)
+        base = img.convert("RGBA")
+        base.alpha_composite(t)
+        return base.convert("RGB")
+
+
 def build(name, sheet, box, pts, backdrop=(255, 255, 255), tol=38, profile=None, mapping=None, ear=None):
     """Bake one face and write assets/textures/face_<name>.png."""
     src = Image.open(HERE / "references" / f"{sheet}.png").convert("RGB")
@@ -464,6 +478,7 @@ def build(name, sheet, box, pts, backdrop=(255, 255, 255), tol=38, profile=None,
                                ear))
     out = ROOT / "assets" / "textures"
     out.mkdir(parents=True, exist_ok=True)
+    res = apply_touchups(res, out / f"face_{name}.touch.png")
     res.save(out / f"face_{name}.png")
     f = lambda col: "#%02x%02x%02x" % col
     print(f"{name}: cheek {f(res.getpixel(CHEEK))}  hair {f(res.getpixel(HAIR))}")

@@ -61,6 +61,7 @@ export async function startViewer(stage, src, rules) {
   const headBone = root.getObjectByName('head');
   const HEAD_CENTRE = new THREE.Vector3(0, 0.113, 0.005);
   let mode = 'body';
+  let paintTexture = null; // the live texture while touching up with brushes
   const headView = { flat: false, hideHair: false };
   let current = null;
 
@@ -92,7 +93,7 @@ export async function startViewer(stage, src, rules) {
   }
   function render() {
     const dt = Math.min(0.1, clock.getDelta());
-    if (playing) mixer.update(dt * speed);
+    if (playing && !paintTexture) mixer.update(dt * speed); // the pose holds still while touching up
     if (mode === 'head') followHead();
     controls.update();
     renderer.render(scene, camera);
@@ -154,6 +155,13 @@ export async function startViewer(stage, src, rules) {
         mat.emissiveMap = flat ? mat.map : null;
         mat.toneMapped = !flat; // tone mapping would shift the painted colours
         mat.userData.flat = flat;
+        mat.userData.isFace = isFace;
+        if (isFace && paintTexture) {
+          mat.userData.url = '@paint';
+          mat.map = paintTexture; if (flat) mat.emissiveMap = paintTexture;
+          mat.needsUpdate = true;
+          continue;
+        }
         const url = textureFor(rule.tex, cfg);
         if (mat.userData.url !== url) {
           mat.userData.url = url;
@@ -218,7 +226,7 @@ export async function startViewer(stage, src, rules) {
   // external editor shows up here on save.
   let faceStamp = { face: null, stamp: null };
   async function checkFace() {
-    if (!current || document.hidden || faceOverride) return;
+    if (!current || document.hidden || faceOverride || paintTexture) return;
     const face = current.face, url = '/textures/face_' + encodeURIComponent(face) + '.png';
     try {
       const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
@@ -231,12 +239,56 @@ export async function startViewer(stage, src, rules) {
       faceStamp = { face, stamp };
     } catch { /* server gone; try again next tick */ }
   }
+  // ---- Brush touch-ups (see painter.js)
+  const raycaster = new THREE.Raycaster();
+  const OCCLUDERS = new Set(['hair_short', 'hair_long', 'hat', 'glasses']);
+  const shown = o => { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; };
+  const isFaceMesh = o => [o.material].flat().some(m => m.userData.isFace);
+  // The face point under the pointer: the mesh, its triangle and barycentric weights (so the painter can
+  // work in the rest pose), plus the world point, normal and scale for the cursor.
+  function paintHit(clientX, clientY) {
+    const r = renderer.domElement.getBoundingClientRect();
+    raycaster.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), camera);
+    const targets = meshes.filter(o => shown(o) && (isFaceMesh(o) || OCCLUDERS.has(o.userData.part)));
+    const h = raycaster.intersectObjects(targets, false)[0];
+    if (!h || !isFaceMesh(h.object) || !h.face) return null; // hair or a hat is in front
+    const o = h.object, f = h.face, v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    [f.a, f.b, f.c].forEach((vi, k) => o.localToWorld(o.getVertexPosition(vi, v[k])));
+    const tri = new THREE.Triangle(...v), bary = tri.getBarycoord(h.point, new THREE.Vector3());
+    if (!bary) return null;
+    const normal = tri.getNormal(new THREE.Vector3());
+    if (normal.dot(raycaster.ray.direction) > 0) normal.negate();
+    return { mesh: o, tri: [f.a, f.b, f.c], bary: [bary.x, bary.y, bary.z], point: h.point, normal, scale: o.getWorldScale(new THREE.Vector3()).x };
+  }
+  const cursor = new THREE.Group();
+  const ringMat = opacity => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+  const outer = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 48), ringMat(0.9));
+  const shadow = new THREE.Mesh(new THREE.RingGeometry(1, 1.07, 48), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  const inner = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 48), ringMat(0.35));
+  cursor.add(outer, shadow, inner); cursor.visible = false; cursor.renderOrder = 999;
+  for (const m of [outer, shadow, inner]) m.renderOrder = 999;
+  scene.add(cursor);
+  function setPaintCursor(c) {
+    if (!c) { cursor.visible = false; return; }
+    cursor.visible = true;
+    cursor.position.copy(c.point).addScaledVector(c.normal, 0.0004);
+    cursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), c.normal);
+    cursor.scale.setScalar(c.radius);
+    inner.visible = c.inner > 0.05 && c.inner < 0.97; inner.scale.setScalar(c.inner);
+  }
+  function setPaintTexture(t) {
+    paintTexture = t || null;
+    controls.mouseButtons.RIGHT = paintTexture ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN; // right-drag orbits while painting
+    if (!paintTexture) for (const o of meshes) for (const m of [o.material].flat()) if (m.userData.url === '@paint') m.userData.url = null;
+    if (current) update(current);
+  }
+
   let onFaceReload = null;
   setInterval(checkFace, 1200);
   setView('front');
 
   return {
-    update, play, setView, zoom, headAngle, setHeadOptions, setFaceOverride,
+    update, play, setView, zoom, headAngle, setHeadOptions, setFaceOverride, paintHit, setPaintCursor, setPaintTexture,
     onFaceReload: fn => { onFaceReload = fn; },
     setPlaying: v => { playing = v; },
     setSpeed: v => { speed = v; },
