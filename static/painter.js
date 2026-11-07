@@ -90,8 +90,9 @@ export class FacePainter {
   // ---- surface maps: rest position + normal per texel, gutters, spatial grid
   surfaceFor(mesh) {
     const geo = mesh.geometry;
-    let m = this.maps.get(geo.uuid);
-    if (!m) { m = buildSurface(geo); this.maps.set(geo.uuid, m); }
+    const key = geo.uuid + ':' + (geo.userData.shapeVersion || 0); // rebuilt after shape edits
+    let m = this.maps.get(key);
+    if (!m) { for (const k of this.maps.keys()) if (k.startsWith(geo.uuid)) this.maps.delete(k); m = buildSurface(geo); this.maps.set(key, m); }
     return m;
   }
 

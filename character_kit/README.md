@@ -198,3 +198,7 @@ A new garment must use these names, or `character.gd` must learn the new one. If
 - **Painted hats and glasses** (cap, beanie, sunglasses) are part of the face texture. The game's own 3D hat and glasses go on top.
 - **`ImageDraw.floodfill` silently does nothing** on an image made with `Image.fromarray`. Call `.copy()` first.
 - **Point picking:** pick eye and mouth points from a `grid.py` zoom, not by eyeballing the whole sheet.
+
+## Shape edits
+
+The Forge's **Edit shape** mode stores mesh edits with the character as `shape`: `{part: [[x, y, z, dx, dy, dz], ...]}`, where `x, y, z` is a vertex's original position in the part's glTF mesh space (Y up, metres) and `dx, dy, dz` how far it moved. Matching by position rather than vertex index keeps the split copies of a vertex (UV and material seams) together. `export_character.py` (`apply_shape`) moves every Blender vertex within 0.2 mm of each `x, -z, y` and recomputes smooth normals round the moved area; the rest of the mesh keeps its own normals. Edits stay valid as long as `human.glb` is not rebuilt with different geometry.

@@ -40,6 +40,46 @@ for obj in list(bpy.data.objects):
     elif obj.type in ('CAMERA', 'LIGHT'):
         bpy.data.objects.remove(obj, do_unlink=True)
 
+def apply_shape(obj, rows):
+    """Mesh edits from the Forge's Edit shape mode. Each row is [x, y, z, dx, dy, dz] in the part's glTF
+    mesh space (Y up); every vertex at x, y, z (split copies included) moves by dx, dy, dz. Normals
+    round the moved vertices are recomputed smooth; the rest keep the model's own."""
+    from mathutils import Vector, kdtree
+    me = obj.data
+    tree = kdtree.KDTree(len(me.vertices))
+    for v in me.vertices: tree.insert(v.co, v.index)
+    tree.balance()
+    moved = set()
+    for x, y, z, dx, dy, dz in rows:
+        for _, i, _ in tree.find_range(Vector((x, -z, y)), 2e-4):   # glTF Y-up -> Blender Z-up
+            me.vertices[i].co += Vector((dx, -dz, dy))
+            moved.add(i)
+    if not moved:
+        print('shape edits matched no vertices on', obj.name); return
+    me.update()
+    # Smooth normals over the moved area, shared by vertices that sit at the same place (UV seams).
+    key = lambda co: (round(co.x, 4), round(co.y, 4), round(co.z, 4))
+    ring = set(moved)
+    for poly in me.polygons:
+        if any(i in moved for i in poly.vertices): ring.update(poly.vertices)
+    acc = {}
+    for poly in me.polygons:
+        if not any(i in ring for i in poly.vertices): continue
+        n = poly.normal * poly.area
+        for i in poly.vertices:
+            acc.setdefault(key(me.vertices[i].co), Vector()).__iadd__(n)
+    loops = [Vector(n.vector) for n in me.corner_normals] if hasattr(me, 'corner_normals') else [l.normal.copy() for l in me.loops]
+    for li, loop in enumerate(me.loops):
+        if loop.vertex_index in ring:
+            n = acc.get(key(me.vertices[loop.vertex_index].co))
+            if n is not None and n.length > 1e-12: loops[li] = n.normalized()
+    me.normals_split_custom_set(loops)
+    print(f'shape: moved {len(moved)} vertices on {obj.name}')
+
+for part, rows in (cfg.get('shape') or {}).items():
+    obj = bpy.data.objects.get(part)
+    if obj is not None and obj.type == 'MESH': apply_shape(obj, rows)
+
 def linear_rgb(value, fallback):
     """UI hex colours are sRGB; Blender colour sockets are linear."""
     v = str(value or fallback).strip().lstrip('#')

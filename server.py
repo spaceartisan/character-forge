@@ -428,7 +428,29 @@ def normalize_character(p):
     if 'lens' in given and 'glasses' not in given: colors['glasses']=given['lens']  # v1.1 name
     cfg['colors']={k:(colors[k] if isinstance(colors[k],str) and re.fullmatch('#[a-fA-F0-9]{6}',colors[k]) else v)
                    for k,v in DEFAULTS['colors'].items()}
-    return {k:cfg[k] for k in ('name','face','body','outfit','hair','hat','glasses','scale','animation','fabric','colors')}
+    cfg['shape']=clean_shape(cfg.get('shape'))
+    out={k:cfg[k] for k in ('name','face','body','outfit','hair','hat','glasses','scale','animation','fabric','colors')}
+    if cfg['shape']: out['shape']=cfg['shape']
+    return out
+
+SHAPE_PARTS = {'person_m','person_f','legs_m','legs_coat','outfit_suit','outfit_trench','outfit_shirt','outfit_dress',
+               'hair_short','hair_long','hat','glasses'}
+def clean_shape(shape):
+    """Mesh edits made in the Forge: {part: [[x, y, z, dx, dy, dz], ...]}, where x, y, z is a vertex's original
+    position in the part's glTF mesh space and dx, dy, dz how far it moved (metres)."""
+    if not isinstance(shape,dict): return {}
+    out={}
+    for part,rows in shape.items():
+        if part not in SHAPE_PARTS or not isinstance(rows,list): continue
+        clean=[]
+        for r in rows[:30000]:
+            if not (isinstance(r,(list,tuple)) and len(r)==6): continue
+            try: v=[float(x) for x in r]
+            except (TypeError,ValueError): continue
+            if not all(abs(x)<3 for x in v[:3]) or not all(abs(x)<.5 for x in v[3:]): continue
+            clean.append([round(x,5) for x in v])
+        if clean: out[part]=clean
+    return out
 
 @app.post('/api/rebuild')
 def rebuild_source_model():

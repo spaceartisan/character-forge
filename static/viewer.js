@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { collectCharacterParts, applyCharacterParts } from './character-parts.mjs';
+import { PartShape, ShapeEditor } from './shape.js?v=2.5.1';
 
 export async function startViewer(stage, src, rules) {
   const scene = new THREE.Scene();
@@ -46,13 +47,14 @@ export async function startViewer(stage, src, rules) {
   for (const [id, node] of parts) node.traverse(o => { o.userData.part = id; });
 
   const meshes = [];
+  const skeletons = new Set();
   let triangles = 0;
   root.traverse(o => {
     if (!o.isMesh) return;
     meshes.push(o);
     const geo = o.geometry;
     triangles += Math.floor((geo.index ? geo.index.count : geo.attributes.position.count) / 3);
-    if (o.isSkinnedMesh) o.frustumCulled = false; // animated poses leave the bind-pose bounds
+    if (o.isSkinnedMesh) { o.frustumCulled = false; skeletons.add(o.skeleton); } // animated poses leave the bind-pose bounds
     // Material instances are shared between outfits in the GLB; give each mesh its own.
     o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
   });
@@ -61,6 +63,7 @@ export async function startViewer(stage, src, rules) {
   const headBone = root.getObjectByName('head');
   const HEAD_CENTRE = new THREE.Vector3(0, 0.113, 0.005);
   let mode = 'body';
+  let editor = null;
   let paintTexture = null; // the live texture while touching up with brushes
   const headView = { flat: false, hideHair: false };
   let current = null;
@@ -93,7 +96,8 @@ export async function startViewer(stage, src, rules) {
   }
   function render() {
     const dt = Math.min(0.1, clock.getDelta());
-    if (playing && !paintTexture) mixer.update(dt * speed); // the pose holds still while touching up
+    if (editor?.active) for (const s of skeletons) s.pose(); // rest pose while editing the shape
+    else if (playing && !paintTexture) mixer.update(dt * speed); // the pose holds still while touching up
     if (mode === 'head') followHead();
     controls.update();
     renderer.render(scene, camera);
@@ -175,6 +179,12 @@ export async function startViewer(stage, src, rules) {
         mat.needsUpdate = true;
       }
     }
+    // Shape edits stored with the character (Edit shape mode).
+    for (const id of parts.keys()) {
+      const rows = cfg.shape?.[id];
+      if ((rows && rows.length) || shapes.has(id)) shapeFor(id).apply(rows || []);
+    }
+    if (editor?.active) editor.draw();
     play(cfg.animation || 'idle');
     return result;
   }
@@ -239,6 +249,27 @@ export async function startViewer(stage, src, rules) {
       faceStamp = { face, stamp };
     } catch { /* server gone; try again next tick */ }
   }
+  // ---- Edit shape (see shape.js)
+  const shapes = new Map();
+  function shapeFor(id) {
+    if (!parts.has(id)) return null;
+    if (!shapes.has(id)) shapes.set(id, new PartShape(id, parts.get(id)));
+    return shapes.get(id);
+  }
+  function startEdit(callbacks) {
+    editor ??= new ShapeEditor({
+      scene, camera, renderer, controls, stage, shapeFor,
+      visibleMeshes: () => meshes.filter(o => { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; }),
+      onChange: () => {}, onEdit: () => {},
+    });
+    Object.assign(editor, callbacks);
+    for (const s of skeletons) s.pose();
+    root.updateMatrixWorld(true);
+    editor.start();
+    return editor;
+  }
+  function stopEdit() { if (!editor?.active) return; editor.stop(); mixer.update(0); }
+
   // ---- Brush touch-ups (see painter.js)
   const raycaster = new THREE.Raycaster();
   const OCCLUDERS = new Set(['hair_short', 'hair_long', 'hat', 'glasses']);
@@ -288,7 +319,7 @@ export async function startViewer(stage, src, rules) {
   setView('front');
 
   return {
-    update, play, setView, zoom, headAngle, setHeadOptions, setFaceOverride, paintHit, setPaintCursor, setPaintTexture,
+    update, play, setView, zoom, headAngle, setHeadOptions, setFaceOverride, paintHit, setPaintCursor, setPaintTexture, startEdit, stopEdit,
     onFaceReload: fn => { onFaceReload = fn; },
     setPlaying: v => { playing = v; },
     setSpeed: v => { speed = v; },

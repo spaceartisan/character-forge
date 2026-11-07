@@ -46,3 +46,19 @@
 .paint-tip{min-height:30px}
 .paint-history{justify-content:flex-start;margin-bottom:8px}
 .paint-keys{color:#6f828b}
+
+/* Edit shape panel */
+.edit-shape{font-size:9px;color:#b7c6c4;letter-spacing:.08em;border-radius:5px;padding:8px;background:none}
+.edit-shape:hover{background:#d0dfbb;color:#20302d}
+.edit-shape.active{background:#f0b25a;color:#20302d}
+.shape-modes{margin:12px 0 8px}
+.shape-count{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#c3d0cd;margin:4px 0 8px}
+.shape-count span{display:flex;gap:10px}
+.link-btn{background:none;color:#b4d3a5;font-size:10px;padding:0;text-decoration:underline;text-underline-offset:2px}
+.link-btn:disabled{color:#5d6c72;text-decoration:none}
+.shape-move{width:100%;margin-top:2px}
+.shape-nudge{display:flex;flex-direction:column;gap:5px;margin:6px 0 10px}
+.shape-sub{font-size:10px;color:#a9bbb8;display:flex;align-items:center;gap:6px}
+.shape-sub input{width:54px;background:#17232b;border:1px solid #33434c;border-radius:4px;color:#e3ece8;padding:3px 5px;font-size:10px}
+.shape-modes button.active{background:#f0b25a}
+.edit-shape{white-space:nowrap}

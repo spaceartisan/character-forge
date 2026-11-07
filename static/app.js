@@ -44,6 +44,7 @@ const SOURCE_LABEL={front:'Front',side:'Side',both:'Both',fill:'Fill'};
 const SOURCE_HINT={front:'Front view only',side:'Profile only',both:'Blend front and profile',fill:'Neither: smooth fill from around it'};
 async function openMapPanel(){
  if(paintFace&&!closePaintPanel())return;
+ closeShapePanel();
  const face=chosen.face;
  try{
   const d=await api('/api/faces/'+encodeURIComponent(face)+'/mapping');
@@ -98,9 +99,9 @@ const hex=c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join('');
 const unhex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 async function openPaintPanel(){
  if(!viewer)return toast('The 3D view is not ready',true);
- closeMapPanel();
+ closeMapPanel();closeShapePanel();
  try{
-  paintMod=paintMod||await import('/static/painter.js?v=2.4.2');
+  paintMod=paintMod||await import('/static/painter.js?v=2.5.1');
   if(!painter)painter=new paintMod.FacePainter(viewer,$('#stage'),{onChange:renderPaintPanel,onPick:()=>{if(painter.tool==='pick')painter.tool='paint'}});
   paintFace=chosen.face;setStatus('LOADING FACE '+paintFace.toUpperCase()+' FOR TOUCH-UPS…');
   await painter.start(paintFace);
@@ -159,6 +160,56 @@ async function clearPaint(){
  try{const r=await api('/api/faces/'+encodeURIComponent(face)+'/paint/clear',{method:'POST',body:'{}'});closePaintPanel(true);refreshFaceTexture(face,r.face.texture);toast('Rebaked face '+face+' without touch-ups.');openPaintPanel()}
  catch(e){toast(e.message,true)}
 }
+// Edit shape: select vertices, edges or faces and move them (shape.js). Edits belong to the character.
+let shapeEd=null;
+const PART_LABEL={person_m:'Body (masculine)',person_f:'Body (feminine)',legs_m:'Legs',legs_coat:'Legs (coat)',outfit_suit:'Suit',outfit_trench:'Trench coat',outfit_shirt:'Shirt',outfit_dress:'Dress',hair_short:'Short hair',hair_long:'Long hair',hat:'Hat',glasses:'Glasses'};
+function openShapePanel(){
+ if(!viewer)return toast('The 3D view is not ready',true);
+ if(paintFace&&!closePaintPanel())return;
+ closeMapPanel();
+ shapeEd=viewer.startEdit({onChange:renderShapePanel,onEdit:(part,rows)=>{chosen.shape={...(chosen.shape||{})};if(rows.length)chosen.shape[part]=rows;else delete chosen.shape[part];if(!Object.keys(chosen.shape).length)delete chosen.shape;dirty()}});
+ $('#editShape').classList.add('active');$('#editShape').setAttribute('aria-expanded','true');
+ setStatus('EDIT SHAPE: CLICK THE MODEL TO SELECT, G TO MOVE');
+ renderShapePanel();
+}
+function closeShapePanel(){
+ if(!shapeEd?.active)return;
+ viewer.stopEdit();$('#shapePanel')?.classList.add('hidden');
+ $('#editShape').classList.remove('active');$('#editShape').setAttribute('aria-expanded','false');
+}
+function renderShapePanel(){
+ const E=shapeEd;if(!E?.active)return;
+ let el=$('#shapePanel');if(!el){el=document.createElement('aside');el.id='shapePanel';el.className='map-panel shape-panel hidden';el.setAttribute('aria-label','Edit shape');$('.inspector-panel').appendChild(el)}
+ const n=E.sel.size,part=E.part?.id,g=E.grab,edited=Object.keys(chosen.shape||{});
+ const modes=[['vertex','Vertex','1'],['edge','Edge','2'],['face','Face','3']];
+ const nudge=[['x','Left','Right'],['y','Down','Up'],['z','Back','Forward']];
+ el.innerHTML=`<div class="map-head"><div><span class="map-kicker">${part?safeText((PART_LABEL[part]||part).toUpperCase()):'NO PART SELECTED'}</span><h3>Edit shape</h3></div><button class="x-close" id="shapeClose" aria-label="Close">×</button></div>
+ <p class="map-note">Click the model to select. Shift-click adds or removes. Drag still orbits. The rig holds its rest pose while you edit.</p>
+ <div class="map-seg shape-modes" role="group" aria-label="Select">${modes.map(([k,l,key])=>`<button data-smode="${k}" class="${E.mode===k?'active':''}" title="${l} select (${key})">${l}</button>`).join('')}</div>
+ <div class="shape-count">${n?`${n} vert${n===1?'ex':'ices'} selected`:'Nothing selected'}<span><button class="link-btn" id="shapeGrow" ${n?'':'disabled'}>Grow</button><button class="link-btn" id="shapeClear" ${n?'':'disabled'}>Clear</button></span></div>
+ <button class="btn ${g?'btn-ghost':'btn-accent'} small shape-move" id="shapeMove" ${n&&!g?'':'disabled'}>${g?(g.axis?'Moving along '+g.axis.toUpperCase():'Moving…'):'Move (G)'}</button>
+ <p class="map-note">${g?'Move the mouse, then click (or Enter) to place it. Right-click or Esc cancels. X, Y or Z locks the move to that axis.':'Move follows the mouse across the screen. X, Y or Z while moving locks it to one axis.'}</p>
+ <div class="shape-nudge"><span class="shape-sub">Nudge by <input type="number" id="shapeStep" min="0.1" max="20" step="0.1" value="${E.step}"> mm</span>${nudge.map(([a,neg,pos])=>`<div class="map-seg"><button data-nudge="${a}" data-sign="-1" ${n&&!g?'':'disabled'}>${neg}</button><button data-nudge="${a}" data-sign="1" ${n&&!g?'':'disabled'}>${pos}</button></div>`).join('')}</div>
+ <label class="map-show"><input type="checkbox" id="shapeMirror" ${E.mirrorX?'checked':''}> Mirror left / right</label>
+ <label class="map-reach">Soft falloff <strong>${E.soft?E.soft+' mm':'off'}</strong><input type="range" id="shapeSoft" min="0" max="60" step="1" value="${E.soft}"></label>
+ <p class="map-note">Soft falloff drags nearby vertices along, less the further they are, for smooth bumps instead of spikes.</p>
+ <div class="map-actions paint-history"><button class="btn btn-ghost small" id="shapeUndo" ${E.undo.length?'':'disabled'} title="Ctrl+Z">Undo</button><button class="btn btn-ghost small" id="shapeRedo" ${E.redo.length?'':'disabled'} title="Ctrl+Shift+Z">Redo</button></div>
+ <div class="map-actions"><button class="btn btn-ghost small" id="shapeResetPart" ${part&&edited.includes(part)?'':'disabled'}>Reset this part</button><button class="btn btn-ghost small" id="shapeResetAll" ${edited.length?'':'disabled'}>Reset all</button></div>
+ <p class="map-note">Edits belong to this character: <strong>Save character</strong> keeps them and the exported GLB includes them.${edited.length?' Edited: '+edited.map(x=>safeText(PART_LABEL[x]||x)).join(', ')+'.':''}</p>
+ <p class="map-note paint-keys">Keys: 1 2 3 vertex / edge / face · G move · X Y Z axis · Esc clear · Ctrl+Z undo</p>`;
+ el.classList.remove('hidden');
+ $('#shapeClose').onclick=closeShapePanel;
+ $$('#shapePanel [data-smode]').forEach(b=>b.onclick=()=>{E.mode=b.dataset.smode;renderShapePanel()});
+ $('#shapeGrow').onclick=()=>E.grow();$('#shapeClear').onclick=()=>E.select(null);
+ $('#shapeMove').onclick=()=>{const r=$('#stage').getBoundingClientRect();E.mouse??={clientX:r.left+r.width/2,clientY:r.top+r.height/2};E.startGrab()};
+ $('#shapeStep').onchange=e=>{E.step=Math.min(20,Math.max(.1,Number(e.target.value)||1))};
+ $$('#shapePanel [data-nudge]').forEach(b=>b.onclick=()=>E.nudge(b.dataset.nudge,Number(b.dataset.sign)));
+ $('#shapeMirror').onchange=e=>{E.mirrorX=e.target.checked};
+ $('#shapeSoft').oninput=e=>{E.soft=Number(e.target.value);e.target.parentElement.querySelector('strong').textContent=E.soft?E.soft+' mm':'off'};
+ $('#shapeUndo').onclick=()=>E.undoStep();$('#shapeRedo').onclick=()=>E.redoStep();
+ $('#shapeResetPart').onclick=()=>E.resetPart();
+ $('#shapeResetAll').onclick=()=>{if(!confirm('Undo every shape edit on this character?'))return;delete chosen.shape;dirty();E.forget()};
+}
 function setTab(t){activeTab=t;$$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));$$('.tab-page').forEach(x=>x.classList.toggle('active',x.dataset.page===t))}
 function setupControls(){
  $$('.filter').forEach(b=>b.onclick=()=>{activeFaceFilter=b.dataset.filter;$$('.filter').forEach(x=>x.classList.toggle('active',x===b));renderFaceGrid()});
@@ -178,6 +229,7 @@ function setupControls(){
  $('#openFaceTexture').onclick=openFaceTexture;
  $('#mapSources').onclick=()=>mapState?closeMapPanel():openMapPanel();
  $('#touchUp').onclick=()=>paintFace?closePaintPanel():openPaintPanel();
+ $('#editShape').onclick=()=>shapeEd?.active?closeShapePanel():openShapePanel();
  window.addEventListener('beforeunload',e=>{if(painter?.active&&painter.dirty){e.preventDefault();e.returnValue=''}});
  $('#zoomIn').onclick=()=>viewer?.zoom(-.35);$('#zoomOut').onclick=()=>viewer?.zoom(.35);$('#resetView').onclick=()=>setView(headMode?'head':'front');
  $('#playToggle').onclick=()=>{playing=!playing;viewer?.setPlaying(playing);$('#playToggle').textContent=playing?'❚❚':'▶'};
@@ -226,6 +278,6 @@ class FaceLab{
  up(){this.drag=null}
  destroy(){this.resizeObserver.disconnect();this.canvas.removeEventListener('pointerdown',this.boundDown);this.canvas.removeEventListener('pointermove',this.boundMove);this.canvas.removeEventListener('pointerup',this.boundUp);this.canvas.removeEventListener('pointercancel',this.boundUp)}
 }
-async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.4.2');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
+async function initViewer(){try{const mod=await import('/static/viewer.js?v=2.5.1');viewer=await mod.startViewer($('#stage'),catalog.base_model,catalog.rules);viewer.onFaceReload(face=>{$$(`.face-tile[data-face="${face}"] img`).forEach(img=>{img.src='/textures/face_'+encodeURIComponent(face)+'.png?v='+Date.now()});setStatus('FACE TEXTURE RELOADED: '+face.toUpperCase())});const visible=viewer.update(chosen);viewer.play(chosen.animation);viewer.setPlaying(playing);$('#viewerHint').style.display='none';$('#previewFallback').style.display='none';$('#viewLabel').textContent='PERSPECTIVE / LIVE VIEW';$('#engineState').textContent='LIVE 3D / LOCAL FILES';setStatus('LIVE 3D / ASSET PIPELINE CONNECTED');$('#polyReadout').textContent=viewer.stats;$('#meshStatus').textContent=`${visible.visible.length} PARTS VISIBLE`}catch(e){console.error('3D viewer:',e);$('#stage canvas')?.remove();$('#previewFallback').style.display='block';$('#viewerHint').textContent='3D preview failed: '+(e.message||String(e)).slice(0,95);$('#viewerHint').style.top='92%';$('#viewerHint').style.fontSize='10px';$('#viewLabel').textContent='REFERENCE / STATIC PREVIEW';$('#meshStatus').textContent='STATIC PREVIEW / CHECK CONSOLE';}}
 async function init(){setupControls();try{catalog=await api('/api/catalog');chosen=structuredClone(catalog.starter||fallback);setupClips();syncControls();$('#faceFoot').textContent=`${catalog.faces.length} UV textures available`;$('#engineState').textContent=catalog.blender_available?'BLENDER READY':'BLENDER NOT DETECTED';setStatus(catalog.model_available?'SOURCE MODEL READY — NOBODY CAME / character_kit':'BASE MODEL NOT BUILT');if(catalog.model_available)initViewer();else {$('#viewerHint').textContent='Base model missing. Follow README to rebuild human.glb.';toast('Source human.glb is missing',true)} }catch(e){console.error(e);toast('Could not load character data: '+e.message,true);$('#viewerHint').textContent='Unable to connect to character pipeline.'}}
 init();
